@@ -1,0 +1,19 @@
+.counter-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 2rem;
+}
+
+.counter {
+  margin: 0 1rem;
+  text-align: center;
+}
+
+.inline-highlite {
+  background-color: teal;
+  color: white;
+  font-weight: 400;
+  padding: 0.2em;
+  border-radius: 0.2em
+}
