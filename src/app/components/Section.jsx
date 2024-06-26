@@ -10,7 +10,6 @@ const Section = () => {
 
     const sendTransaction = async () => {
         try {
-            console.log(xianWalletUtilInstance)
             const response = await xianWalletUtilInstance.sendTransaction("con_counter", "increment_counter", {});
             handleTransaction(response);
         } catch (error) {

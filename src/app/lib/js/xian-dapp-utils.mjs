@@ -4,6 +4,7 @@ const XianWalletUtils = {
     walletReadyResolver: null,
     transactionResolver: null,
     walletInfoReq: null,
+    walletReadyReq: null,
 
     hexToString: function (hex) {
         // Convert hex string to bytes
@@ -26,7 +27,6 @@ const XianWalletUtils = {
         }
 
         document.addEventListener('xianWalletInfo', event => {
-            console.log("xianWalletInfo added")
             if (this.walletInfoResolver) {
                 // @ts-ignore
                 this.walletInfoResolver(event.detail);
@@ -35,7 +35,6 @@ const XianWalletUtils = {
         }, { once: true });
 
         document.addEventListener('xianWalletTxStatus', event => {
-            console.log("xianWalletTxStatus added")
             if (this.transactionResolver) {
                 // @ts-ignore
                 if ('errors' in event.detail) {
@@ -62,7 +61,6 @@ const XianWalletUtils = {
         }, { once: true });
 
         document.addEventListener('xianReady', () => {
-            console.log("xianReady added")
             this.isWalletReady = true;
             if (this.walletReadyResolver) {
                 this.walletReadyResolver();
@@ -73,15 +71,18 @@ const XianWalletUtils = {
     },
 
     waitForWalletReady: function () {
-        return new Promise(resolve => {
+        if (this.walletReadyReq) return this.walletReadyReq;
+        return this.walletReadyReq = new Promise(resolve => {
             if (this.isWalletReady) {
                 resolve();
+                this.walletReadyReq = null;
             } else {
                 this.walletReadyResolver = resolve;
                 setTimeout(() => {
                     if (!this.isWalletReady) {
                         this.walletReadyResolver = null; // Clear the resolver
                         resolve(); // Resolve anyway to not block the flow
+                        this.walletReadyReq = null;
                     }
                 }, 2000); // 2 seconds timeout
             }
@@ -99,6 +100,7 @@ const XianWalletUtils = {
             const timeoutId = setTimeout(() => {
                 this.walletInfoResolver = null; // Clear the resolver
                 reject(new Error('Xian Wallet Chrome extension not installed or not responding'));
+                this.walletInfoReq = null;
             }, 2000); // 2 seconds timeout
 
             // Dispatch the event to request wallet info
@@ -106,13 +108,38 @@ const XianWalletUtils = {
 
             // Wrap the original resolve to clear the timeout when resolved
             this.walletInfoResolver = (info) => {
-                console.log('Wallet info:', info);
                 clearTimeout(timeoutId);
                 resolve(info);
                 this.walletInfoReq = null;
             };
         });
         return this.walletInfoReq;
+    },
+
+    // Sign a message and return a promise that resolves with the signature
+    signMessage: async function(message) {
+        await this.waitForWalletReady();
+        return new Promise((resolve, reject) => {
+            this.signMsgResolver = resolve; // Store the resolver to use in the event listener
+
+            // Set a timeout to reject the promise if it does not resolve within a certain timeframe
+            const timeoutId = setTimeout(() => {
+                this.signMsgResolver = null; // Clear the resolver
+                reject(new Error('Xian Wallet Chrome extension not responding'));
+            }, 30000); // 30 seconds timeout, this requires manual confirmation
+            
+            document.dispatchEvent(new CustomEvent('xianWalletSignMsg', {
+                detail: {
+                    message: message
+                }
+            }));
+
+            // Wrap the original resolve to clear the timeout when resolved
+            this.signMsgResolver = (signature) => {
+                clearTimeout(timeoutId);
+                resolve(signature);
+            };
+        });
     },
 
     // Send a transaction with detailed parameters and return a promise that resolves with the transaction status

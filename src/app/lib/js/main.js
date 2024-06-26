@@ -14,7 +14,6 @@ const showToast = (message, type) => {
 const setWalletAddressElementValue = storeAPI.getState().setWalletAddressElementValue
 
 export const handleWalletInfo = (info) => {
-    console.log(info)
     setWalletAddressElementValue(info.address.slice(0, 10) + '...');
     if (info.locked) {
         setWalletAddressElementValue('Wallet is Locked');
