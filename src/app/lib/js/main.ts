@@ -2,7 +2,7 @@ import { storeAPI } from "../store";
 import { updateCurrentCounter } from "./node";
 import * as bulmaToast from "bulma-toast";
 
-const showToast = (message, type) => {
+const showToast = (message: string, type: bulmaToast.ToastType) => {
     bulmaToast.toast({
         message,
         type,
