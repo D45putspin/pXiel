@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import "./app.css"
-import "bulma/css/bulma.min.css";
+import "./globals.css";
 
-
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ 
+  subsets: ["latin"],
+  variable: "--font-inter"
+});
 
 export const metadata: Metadata = {
-  title: "Xian Next.js Starter",
-  description: "Xian Next.js Starter",
+  title: "XiPOLL - Decentralized Voting",
+  description: "Decentralized voting on the Xian blockchain with advanced governance features",
 };
 
 export default function RootLayout({

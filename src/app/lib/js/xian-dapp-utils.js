@@ -1,241 +1,215 @@
 const XianWalletUtils = {
-    rpcUrl: 'https://testnet.xian.org', // Default RPC URL
-    isWalletReady: false,
-    initialized: false,
-    state: {
-        walletReady: {
-            isReady: false,
-            resolvers: [],
-        },
-        walletInfo: {
-            requests: [],
-        },
-        signMessage: {
-            requests: [],
-        },
-        transaction: {
-            requests: [],
-        },
-    },
+  rpcUrl: 'https://node.xian.org',
+  isWalletReady: false,
+  initialized: false,
+  state: {
+    walletReady: { resolvers: [] },
+    walletInfo: { requests: [] },
+    signMessage: { requests: [] },
+    transaction: { requests: [] }
+  },
 
-    // Initialize listeners to resolve promises and set RPC URL
-    init: function(rpcUrl) {
-        if (this.initialized) {
-            console.warn('XianWalletUtils is already initialized. Avoiding re-initialization.');
-            return;
-        }
+  init: function (rpcUrl) {
+    if (this.initialized) return;
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    if (rpcUrl) this.rpcUrl = rpcUrl;
+
+    document.addEventListener('xianWalletInfo', (e) => {
+      if (this.state.walletInfo.requests.length > 0) {
+        const resolver = this.state.walletInfo.requests.shift();
+        resolver(e.detail);
+      }
+    });
+
+    document.addEventListener('xianWalletSignMsgResponse', (e) => {
+      if (this.state.signMessage.requests.length > 0) {
+        const resolver = this.state.signMessage.requests.shift();
+        resolver(e.detail);
+      }
+    });
+
+    document.addEventListener('xianWalletTxStatus', (e) => {
+      console.log('Received xianWalletTxStatus event:', e.detail);
+      
+      if (this.state.transaction.requests.length > 0) {
+        const resolver = this.state.transaction.requests.shift();
         
-        if (rpcUrl) {
-            this.rpcUrl = rpcUrl;
+        if ('errors' in e.detail) {
+          console.error('Transaction failed with errors:', e.detail.errors);
+          resolver(e.detail);
+        } else {
+          console.log('Transaction successful, getting results for txid:', e.detail.txid);
+          this.getTxResultsAsyncBackoff(e.detail.txid)
+            .then((tx) => {
+              console.log('Transaction results received:', tx);
+              try {
+                const decoded = JSON.parse(window.atob(tx.result.tx_result.data));
+                console.log('Decoded transaction result:', decoded);
+                resolver(decoded);
+              } catch (error) {
+                console.error('Failed to decode transaction result:', error);
+                resolver(null);
+              }
+            })
+            .catch((error) => {
+              console.error('Failed to get transaction results:', error);
+              resolver(null);
+            });
         }
+      } else {
+        console.warn('Received transaction status but no pending requests');
+      }
+    });
 
-        // Event listeners for wallet events
-        document.addEventListener('xianWalletInfo', event => {
-            // Resolve pending wallet info requests
-            if (this.state.walletInfo.requests.length > 0) {
-                const resolver = this.state.walletInfo.requests.shift();
-                resolver(event.detail);
-            }
-        });
+    document.addEventListener('xianReady', () => {
+      this.isWalletReady = true;
+      while (this.state.walletReady.resolvers.length > 0) {
+        this.state.walletReady.resolvers.shift()();
+      }
+    });
 
-        document.addEventListener('xianWalletSignMsgResponse', event => {
-            // Resolve pending sign message requests
-            if (this.state.signMessage.requests.length > 0) {
-                const resolver = this.state.signMessage.requests.shift();
-                resolver(event.detail);
-            }
-        });
+    this.initialized = true;
+  },
 
-        document.addEventListener('xianWalletTxStatus', event => {
-            // Resolve pending transaction status requests
-            if (this.state.transaction.requests.length > 0) {
-                const resolver = this.state.transaction.requests.shift();
-                if ('errors' in event.detail) {
-                    resolver(event.detail);
-                } else {
-                    this.getTxResultsAsyncBackoff(event.detail.txid).then(tx => {
-                        let data = tx.result.tx_result.data;
-                        let original_tx = tx.result.tx;
-                        let decodedData = window.atob(data);
-                        let decodedOriginalTx = window.atob(original_tx);
-                        let parsedData = JSON.parse(decodedData);
-                        parsedData.original_tx = JSON.parse(this.hexToString(decodedOriginalTx));
-                        resolver(parsedData);
-                    }).catch(error => {
-                        console.error('Final error after retries:', error);
-                        resolver(null);
-                    });
-                }
-            }
-        });
+  waitForWalletReady: function () {
+    return new Promise((resolve) => {
+      if (this.isWalletReady) resolve();
+      else {
+        this.state.walletReady.resolvers.push(resolve);
+        setTimeout(() => {
+          const idx = this.state.walletReady.resolvers.indexOf(resolve);
+          if (idx !== -1) this.state.walletReady.resolvers.splice(idx, 1);
+          resolve();
+        }, 2000);
+      }
+    });
+  },
 
-        document.addEventListener('xianReady', () => {
-            this.isWalletReady = true;
-            // Resolve all pending wallet ready requests
-            while (this.state.walletReady.resolvers.length > 0) {
-                const resolver = this.state.walletReady.resolvers.shift();
-                resolver();
-            }
-            console.log('Xian Wallet is ready');
-        });
+  requestWalletInfo: async function () {
+    await this.waitForWalletReady();
+    return new Promise((resolve, reject) => {
+      this.state.walletInfo.requests.push(resolve);
+      setTimeout(() => reject(new Error('Xian Wallet not responding')), 2000);
+      if (typeof document !== 'undefined') {
+        document.dispatchEvent(new CustomEvent('xianWalletGetInfo'));
+      }
+    });
+  },
 
-        this.initialized = true; // Mark as initialized
-    },
+  signMessage: async function (message) {
+    await this.waitForWalletReady();
+    return new Promise((resolve, reject) => {
+      this.state.signMessage.requests.push(resolve);
+      setTimeout(() => reject(new Error('Sign message timeout')), 30000);
+      if (typeof document !== 'undefined') {
+        document.dispatchEvent(new CustomEvent('xianWalletSignMsg', { detail: { message } }));
+      }
+    });
+  },
 
-    waitForWalletReady: function() {
-        return new Promise(resolve => {
-            if (this.isWalletReady) {
-                resolve();
-            } else {
-                this.state.walletReady.resolvers.push(resolve);
-                setTimeout(() => {
-                    if (!this.isWalletReady) {
-                        const index = this.state.walletReady.resolvers.indexOf(resolve);
-                        if (index !== -1) {
-                            this.state.walletReady.resolvers.splice(index, 1);
-                            resolve(); // Resolve anyway to not block the flow
-                        }
-                    }
-                }, 2000); // 2 seconds timeout
-            }
-        });
-    },
+  // NÃO normaliza 'end_date': o contrato aceita string (ou nada).
+  sendTransaction: async function (contract, method, kwargs = {}) {
+    await this.waitForWalletReady();
+    console.log('Sending transaction:', { contract, method, kwargs });
+    
+    return new Promise((resolve, reject) => {
+      this.state.transaction.requests.push(resolve);
+      
+      const timeoutId = setTimeout(() => {
+        console.error('Transaction timeout after 30 seconds');
+        reject(new Error('Transaction timeout - wallet may not be responding'));
+      }, 30000);
+      
+      if (typeof document !== 'undefined') {
+        console.log('Dispatching xianWalletSendTx event');
+        document.dispatchEvent(new CustomEvent('xianWalletSendTx', { detail: { contract, method, kwargs } }));
+      } else {
+        console.error('Document not available for transaction');
+        reject(new Error('Document not available'));
+      }
+      
+      // Override the resolve to clear timeout
+      const originalResolve = resolve;
+      this.state.transaction.requests[this.state.transaction.requests.length - 1] = (result) => {
+        clearTimeout(timeoutId);
+        console.log('Transaction resolved with result:', result);
+        originalResolve(result);
+      };
+    });
+  },
 
-    requestWalletInfo: async function() {
-        await this.waitForWalletReady();
-        return new Promise((resolve, reject) => {
-            this.state.walletInfo.requests.push(resolve);
+  getTxResults: async function (txHash) {
+    const response = await fetch(`${this.rpcUrl}/tx?hash=0x${txHash}`);
+    return response.json();
+  },
 
-            const timeoutId = setTimeout(() => {
-                const index = this.state.walletInfo.requests.indexOf(resolve);
-                if (index !== -1) {
-                    this.state.walletInfo.requests.splice(index, 1);
-                    reject(new Error('Xian Wallet Chrome extension not installed or not responding'));
-                }
-            }, 2000); // 2 seconds timeout
+  getTxResultsAsyncBackoff: async function (txHash, retries = 5, delay = 1000) {
+    try {
+      return await this.getTxResults(txHash);
+    } catch (e) {
+      if (retries === 0) throw e;
+      await new Promise((r) => setTimeout(r, delay));
+      return await this.getTxResultsAsyncBackoff(txHash, retries - 1, delay * 2);
+    }
+  },
 
-            document.dispatchEvent(new CustomEvent('xianWalletGetInfo'));
-        });
-    },
+  getUserVote: async function (contract, pollId, userAddress) {
+    const res = await fetch(
+      `${this.rpcUrl}/abci_query?path=%22/get/${contract}.user_votes:${userAddress}:${pollId}%22`
+    );
+    const data = await res.json();
+    const base64 = data.result.response.value;
+    if (!base64 || base64 === 'AA==') return 0;
+    return parseInt(window.atob(base64)) || 0;
+  },
 
-    signMessage: async function(message) {
-        await this.waitForWalletReady();
-        return new Promise((resolve, reject) => {
-            this.state.signMessage.requests.push(resolve);
+  fetchAllPolls: async function (contract) {
+    try {
+      const counterRes = await fetch(
+        `${this.rpcUrl}/abci_query?path=%22/get/${contract}.poll_counter%22`
+      );
+      const counterData = await counterRes.json();
+      const totalPolls = parseInt(window.atob(counterData.result.response.value)) || 0;
 
-            const timeoutId = setTimeout(() => {
-                const index = this.state.signMessage.requests.indexOf(resolve);
-                if (index !== -1) {
-                    this.state.signMessage.requests.splice(index, 1);
-                    reject(new Error('Xian Wallet Chrome extension not responding'));
-                }
-            }, 30000); // 30 seconds timeout, this requires manual confirmation
-            
-            document.dispatchEvent(new CustomEvent('xianWalletSignMsg', {
-                detail: {
-                    message: message
-                }
-            }));
-        });
-    },
-
-    sendTransaction: async function(contract, method, kwargs) {
-        await this.waitForWalletReady();
-        return new Promise((resolve, reject) => {
-            this.state.transaction.requests.push(resolve);
-
-            const timeoutId = setTimeout(() => {
-                const index = this.state.transaction.requests.indexOf(resolve);
-                if (index !== -1) {
-                    this.state.transaction.requests.splice(index, 1);
-                    reject(new Error('Xian Wallet Chrome extension not responding'));
-                }
-            }, 30000); // 30 seconds timeout, this requires manual confirmation
-
-            document.dispatchEvent(new CustomEvent('xianWalletSendTx', {
-                detail: {
-                    contract: contract,
-                    method: method,
-                    kwargs: kwargs
-                }
-            }));
-        });
-    },
-
-    getTxResults: async function(txHash) {
+      const polls = [];
+      for (let i = 1; i <= totalPolls; i++) {
+        const res = await fetch(
+          `${this.rpcUrl}/abci_query?path=%22/get/${contract}.polls:${i}%22`
+        );
+        const data = await res.json();
+        const base64 = data.result.response.value;
+        if (!base64 || base64 === 'AA==') continue;
         try {
-            const response = await fetch(`${this.rpcUrl}/tx?hash=0x${txHash}`);
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            const data = await response.json();
-            return data;
-        } catch (error) {
-            console.log('Transaction not found yet');
-            throw error; // Rethrow the error to trigger retries
+          polls.push(JSON.parse(window.atob(base64)));
+        } catch {
+          // ignora entradas malformadas
         }
-    },
+      }
+      return polls;
+    } catch {
+      return [];
+    }
+  },
 
-    getBalanceRequest: async function(address, contract) {
-        const response = await fetch(`${this.rpcUrl}/abci_query?path=%22/get/${contract}.balances:${address}%22`);
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-        const data = await response.json();
-        let balance = data.result.response.value;
-        if (balance === 'AA==') {
-            return 0;
-        }
-        let decodedBalance = window.atob(balance);
-        return decodedBalance;
-    },
-
-    getBalance: async function(contract) {
-        const info = await this.requestWalletInfo();
-        const address = info.address;
-        const balance = await this.getBalanceRequest(address, contract);
-        return balance;
-    },
-
-    getApprovedBalanceRequest: async function(token_contract, address, approved_to) {
-        const response = await fetch(`${this.rpcUrl}/abci_query?path=%22/get/${token_contract}.balances:${address}:${approved_to}%22`);
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-        const data = await response.json();
-        let balance = data.result.response.value;
-        if (balance === 'AA==') {
-            return 0;
-        }
-        let decodedBalance = window.atob(balance);
-        return decodedBalance;
-    },
-
-    getApprovedBalance: async function(token_contract, approved_to) {
-        const info = await this.requestWalletInfo();
-        const address = info.address;
-        const balance = await this.getApprovedBalanceRequest(token_contract, address, approved_to);
-        return balance;
-    },
-
-    getTxResultsAsyncBackoff: async function(txHash, retries = 5, delay = 1000) {
-        try {
-            return await this.getTxResults(txHash);
-        } catch (error) {
-            if (retries === 0) {
-                throw error;
-            }
-            await new Promise(resolve => setTimeout(resolve, delay));
-            return await this.getTxResultsAsyncBackoff(txHash, retries - 1, delay * 2);
-        }
-    },
-
-    hexToString: function(hex) {
-        let bytes = [];
-        for (let i = 0; i < hex.length; i += 2) {
-            bytes.push(parseInt(hex.substr(i, 2), 16));
-        }
-        return String.fromCharCode.apply(String, bytes);
-    },
+  getBalanceRequest: async function (address, tokenContract) {
+    try {
+      const response = await fetch(
+        `${this.rpcUrl}/abci_query?path=%22/get/${tokenContract}.balances:${address}%22`
+      );
+      const data = await response.json();
+      const balance = data.result.response.value;
+      
+      if (!balance || balance === 'AA==') {
+        return '0';
+      }
+      
+      const decodedBalance = window.atob(balance);
+      return decodedBalance;
+    } catch (error) {
+      console.error('Failed to get balance:', error);
+      return '0';
+    }
+  }
 };
+
 export default XianWalletUtils;

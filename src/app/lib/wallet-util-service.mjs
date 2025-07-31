@@ -2,7 +2,7 @@ import XianWalletUtils from "./js/xian-dapp-utils";
 
 export default class WalletUtilService {
     constructor() {
-        XianWalletUtils.init('https://testnet.xian.org');
+        XianWalletUtils.init('https://node.xian.org');
     }
     static instance = null;
     static getInstance() {
