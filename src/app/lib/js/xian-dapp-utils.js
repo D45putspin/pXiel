@@ -1,3 +1,5 @@
+// Import the handler functions
+
 const XianWalletUtils = {
   rpcUrl: 'https://node.xian.org',
   isWalletReady: false,
@@ -19,6 +21,10 @@ const XianWalletUtils = {
       if (this.state.walletInfo.requests.length > 0) {
         const resolver = this.state.walletInfo.requests.shift();
         resolver(e.detail);
+      }
+      // Update the UI with wallet info
+      if (typeof window !== 'undefined' && window.handleWalletInfo) {
+        window.handleWalletInfo(e.detail);
       }
     });
 

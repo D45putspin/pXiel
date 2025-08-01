@@ -95,3 +95,9 @@ export const handlePollError = (error) => {
     const errorMessage = error?.message || error?.toString() || 'Unknown error';
     showToast("Poll operation error: " + errorMessage, "is-danger");
 }
+
+// Make functions available globally
+if (typeof window !== 'undefined') {
+    (window as any).handleWalletInfo = handleWalletInfo;
+    (window as any).handleWalletError = handleWalletError;
+}
