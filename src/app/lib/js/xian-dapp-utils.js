@@ -2,6 +2,7 @@ const XianWalletUtils = {
   rpcUrl: 'https://node.xian.org',
   isWalletReady: false,
   initialized: false,
+  isUnlocking: false, // Track if wallet is currently being unlocked
   state: {
     walletReady: { resolvers: [] },
     walletInfo: { requests: [] },
@@ -63,6 +64,7 @@ const XianWalletUtils = {
 
     document.addEventListener('xianReady', () => {
       this.isWalletReady = true;
+      this.isUnlocking = false; // Reset unlocking state when wallet is ready
       while (this.state.walletReady.resolvers.length > 0) {
         this.state.walletReady.resolvers.shift()();
       }
@@ -86,10 +88,42 @@ const XianWalletUtils = {
   },
 
   requestWalletInfo: async function () {
+    // If wallet is already being unlocked, wait for it
+    if (this.isUnlocking) {
+      console.log('Wallet is already being unlocked, waiting...');
+      await this.waitForWalletReady();
+      return new Promise((resolve, reject) => {
+        this.state.walletInfo.requests.push(resolve);
+        setTimeout(() => reject(new Error('Xian Wallet not responding')), 2000);
+      });
+    }
+
+    // If wallet is already ready, just return the info
+    if (this.isWalletReady) {
+      return new Promise((resolve, reject) => {
+        this.state.walletInfo.requests.push(resolve);
+        setTimeout(() => reject(new Error('Xian Wallet not responding')), 2000);
+        if (typeof document !== 'undefined') {
+          document.dispatchEvent(new CustomEvent('xianWalletGetInfo'));
+        }
+      });
+    }
+
+    // Set unlocking state to prevent multiple requests
+    this.isUnlocking = true;
+    console.log('Requesting wallet unlock...');
+
     await this.waitForWalletReady();
+    
     return new Promise((resolve, reject) => {
-      this.state.walletInfo.requests.push(resolve);
-      setTimeout(() => reject(new Error('Xian Wallet not responding')), 2000);
+      this.state.walletInfo.requests.push((info) => {
+        this.isUnlocking = false; // Reset unlocking state
+        resolve(info);
+      });
+      setTimeout(() => {
+        this.isUnlocking = false; // Reset unlocking state on timeout
+        reject(new Error('Xian Wallet not responding'));
+      }, 2000);
       if (typeof document !== 'undefined') {
         document.dispatchEvent(new CustomEvent('xianWalletGetInfo'));
       }
