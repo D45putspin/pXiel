@@ -95,6 +95,9 @@ const XianWalletUtils = {
       return new Promise((resolve, reject) => {
         this.state.walletInfo.requests.push(resolve);
         setTimeout(() => reject(new Error('Xian Wallet not responding')), 2000);
+        if (typeof document !== 'undefined') {
+          document.dispatchEvent(new CustomEvent('xianWalletGetInfo'));
+        }
       });
     }
 
@@ -113,7 +116,10 @@ const XianWalletUtils = {
     this.isUnlocking = true;
     console.log('Requesting wallet unlock...');
 
-    await this.waitForWalletReady();
+    // Trigger wallet unlock by dispatching the event
+    if (typeof document !== 'undefined') {
+      document.dispatchEvent(new CustomEvent('xianWalletGetInfo'));
+    }
     
     return new Promise((resolve, reject) => {
       this.state.walletInfo.requests.push((info) => {
@@ -124,9 +130,6 @@ const XianWalletUtils = {
         this.isUnlocking = false; // Reset unlocking state on timeout
         reject(new Error('Xian Wallet not responding'));
       }, 2000);
-      if (typeof document !== 'undefined') {
-        document.dispatchEvent(new CustomEvent('xianWalletGetInfo'));
-      }
     });
   },
 
