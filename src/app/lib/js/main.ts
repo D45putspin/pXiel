@@ -14,8 +14,8 @@ const showToast = (message: string, type: bulmaToast.ToastType) => {
 const setWalletAddressElementValue = storeAPI.getState().setWalletAddressElementValue
 
 export const handleWalletInfo = (info) => {
-    setWalletAddressElementValue(info.address.slice(0, 10) + '...');
-    if (info.locked) {
+    setWalletAddressElementValue(info?.address?.slice(0, 10) + '...');
+    if (info?.locked) {
         setWalletAddressElementValue('Wallet is Locked');
         showToast("Your wallet is locked. Please unlock it to interact with the dapp.", "is-warning");
     }
