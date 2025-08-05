@@ -29,6 +29,7 @@ const Nav = () => {
 
                     <div className="nav-menu">
                         <div className="nav-end">
+
                             <div className="wallet-status">
                                 <div className="wallet-indicator">
                                     <div className={`status-dot ${walletAddressElementValue !== 'Not connected' ? 'connected' : 'disconnected'}`}></div>

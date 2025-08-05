@@ -1,4 +1,7 @@
+"use client";
+
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import useStore from "../lib/store";
 import {
     handlePollCreation,
@@ -6,10 +9,12 @@ import {
     handlePollError
 } from "../lib/js/main";
 import WalletUtilService from '../lib/wallet-util-service';
+import { usePollsQuery } from '../fn/usePollsQuery';
 
 const CONTRACT = "con_xipoll_v0";
 
 const Section = () => {
+    const router = useRouter();
     const xianWalletUtilInstance = WalletUtilService.getInstance().XianWalletUtils;
 
     useEffect(() => {
@@ -18,7 +23,12 @@ const Section = () => {
         }
     }, [xianWalletUtilInstance]);
 
-    const { polls, setPolls, addUserVote } = useStore();
+    const { polls, loading, error, refetch } = usePollsQuery();
+    const { addUserVote } = useStore();
+
+    // Log for debugging
+    console.log('Section component:', { polls, loading, error });
+
     const [newPollTitle, setNewPollTitle] = useState('');
     const [newPollOptions, setNewPollOptions] = useState(['', '']);
     const [newPollTokenContract, setNewPollTokenContract] = useState('currency');
@@ -37,75 +47,7 @@ const Section = () => {
         return Number.isNaN(ms) ? null : new Date(ms);
     };
 
-    useEffect(() => {
-        async function fetchPolls() {
-            try {
-                const walletInfo = await xianWalletUtilInstance.requestWalletInfo();
-                const address = walletInfo.address;
-                const rawPolls = await xianWalletUtilInstance.fetchAllPolls(CONTRACT);
 
-                console.log('Raw polls data:', rawPolls);
-
-                const normalized = await Promise.all(
-                    rawPolls.map(async (p) => {
-                        const createdStr = p.created_at ?? p.createdAt;
-                        const endStr = p.end_date ?? p.endDate;
-                        const createdAt = toDate(createdStr);
-                        const endDate = toDate(endStr);
-                        const userVote = await xianWalletUtilInstance.getUserVote(CONTRACT, p.id, address);
-
-                        // Normalize options with vote counts
-                        let options = [];
-                        if (Array.isArray(p.options)) {
-                            options = p.options.map((opt, idx) => {
-                                const id = typeof opt === 'object' && opt !== null
-                                    ? (opt.id ?? opt.option_id ?? idx + 1)
-                                    : idx + 1;
-                                const text = typeof opt === 'object' && opt !== null
-                                    ? (opt.text ?? opt.option ?? String(opt))
-                                    : String(opt);
-                                const votes = opt.votes ?? 0;
-                                const voting_power = opt.voting_power ?? opt.votes ?? 0;
-                                return { id, text, votes, voting_power };
-                            });
-                        } else if (p.options && typeof p.options === 'object') {
-                            options = Object.entries(p.options).map(([key, value], idx) => ({
-                                id: parseInt(key) || idx + 1,
-                                text: typeof value === 'string'
-                                    ? value
-                                    : (value?.text ?? String(value)),
-                                votes: value.votes ?? 0,
-                                voting_power: value.voting_power ?? value.votes ?? 0
-                            }));
-                        }
-
-                        const pollData = {
-                            id: p.id,
-                            title: p.title || 'Untitled Poll',
-                            options,
-                            totalVotes: p.total_votes ?? p.totalVotes ?? 0,
-                            totalVotingPower: p.total_voting_power ?? p.totalVotingPower ?? 0,
-                            token_contract: p.token_contract ?? p.tokenContract,
-                            creator: p.creator || 'Unknown',
-                            createdAt,
-                            endDate,
-                            isActive: endDate ? (new Date() <= endDate) : false,
-                            userVote: userVote || 0
-                        };
-
-                        console.log('Normalized poll data:', pollData);
-                        return pollData;
-                    })
-                );
-
-                setPolls(normalized);
-            } catch (err) {
-                console.error("Failed to fetch polls:", err);
-                setPolls([]);
-            }
-        }
-        fetchPolls();
-    }, [setPolls, xianWalletUtilInstance]);
 
     const createPoll = async () => {
         if (!newPollTitle.trim() || newPollOptions.some(opt => !opt.trim()) || !newPollEndDate) {
@@ -137,6 +79,9 @@ const Section = () => {
                 return defaultDate.toISOString().split('T')[0];
             });
             setShowCreateForm(false);
+
+            // Don't refetch immediately - let the pollInterval handle it
+            // The GraphQL query will automatically refresh every 5 seconds
         } catch (error) {
             console.error('Create poll error:', error);
             handlePollError(error);
@@ -158,60 +103,8 @@ const Section = () => {
             addUserVote(pollId, optionId);
             handleVoteSubmission();
 
-            // re-fetch to update counts
-            const walletInfo = await xianWalletUtilInstance.requestWalletInfo();
-            const address = walletInfo.address;
-            const rawPolls = await xianWalletUtilInstance.fetchAllPolls(CONTRACT);
-            const refreshed = await Promise.all(
-                rawPolls.map(async (p) => {
-                    const createdStr = p.created_at ?? p.createdAt;
-                    const endStr = p.end_date ?? p.endDate;
-                    const createdAt = toDate(createdStr);
-                    const endDate = toDate(endStr);
-                    const userVote = await xianWalletUtilInstance.getUserVote(CONTRACT, p.id, address);
-
-                    // normalize again
-                    let options = [];
-                    if (Array.isArray(p.options)) {
-                        options = p.options.map((opt, idx) => {
-                            const id = typeof opt === 'object' && opt !== null
-                                ? (opt.id ?? opt.option_id ?? idx + 1)
-                                : idx + 1;
-                            const text = typeof opt === 'object' && opt !== null
-                                ? (opt.text ?? opt.option ?? String(opt))
-                                : String(opt);
-                            const votes = opt.votes ?? 0;
-                            const voting_power = opt.voting_power ?? opt.votes ?? 0;
-                            return { id, text, votes, voting_power };
-                        });
-                    } else if (p.options && typeof p.options === 'object') {
-                        options = Object.entries(p.options).map(([key, value], idx) => ({
-                            id: parseInt(key) || idx + 1,
-                            text: typeof value === 'string'
-                                ? value
-                                : (value?.text ?? String(value)),
-                            votes: value.votes ?? 0,
-                            voting_power: value.voting_power ?? value.votes ?? 0
-                        }));
-                    }
-
-                    return {
-                        id: p.id,
-                        title: p.title,
-                        options,
-                        totalVotes: p.total_votes ?? p.totalVotes ?? 0,
-                        totalVotingPower: p.total_voting_power ?? p.totalVotingPower ?? 0,
-                        token_contract: p.token_contract ?? p.tokenContract,
-                        creator: p.creator,
-                        createdAt,
-                        endDate,
-                        isActive: endDate ? (new Date() <= endDate) : false,
-                        userVote: userVote || 0
-                    };
-                })
-            );
-
-            setPolls(refreshed);
+            // Refetch the GraphQL query to get updated poll data
+            refetch();
         } catch (error) {
             console.error('Vote error:', error);
             handlePollError(error);
@@ -227,10 +120,10 @@ const Section = () => {
     const getVotePercentage = (votes, total) => total > 0 ? Math.round((votes / total) * 100) : 0;
     const hasVoted = (poll) => (poll.userVote || 0) > 0;
     const pollExpired = (poll) => !poll.isActive;
-    const filteredPolls = polls.filter(poll => {
+    const filteredPolls = (polls || []).filter(poll => {
         if (!searchTerm.trim()) return true;
         const searchLower = searchTerm.toLowerCase();
-        const titleMatch = poll.title.toLowerCase().includes(searchLower);
+        const titleMatch = (poll.title || '').toLowerCase().includes(searchLower);
         const tokenMatch = (poll.token_contract || '').toLowerCase().includes(searchLower);
         return titleMatch || tokenMatch;
     });
@@ -315,6 +208,10 @@ const Section = () => {
         } catch (err) {
             console.error('Failed to copy to clipboard:', err);
         }
+    };
+
+    const handlePollClick = (pollId) => {
+        router.push(`/poll/${pollId}`);
     };
 
     return (
@@ -487,7 +384,7 @@ const Section = () => {
                         <div className="polls-grid">
                             {sortedPolls.map((poll, index) => (
                                 <div key={poll.id} className="poll-card fade-in" style={{ animationDelay: `${index * 0.1}s` }}>
-                                    <div className="poll-header">
+                                    <div className="poll-card-header" onClick={() => handlePollClick(poll.id)}>
                                         <div className="poll-title">
                                             <h4>{poll.title}</h4>
                                             <div className="poll-meta">
@@ -516,7 +413,10 @@ const Section = () => {
                                                 {poll.token_contract && (
                                                     <button
                                                         className="token-copy-btn"
-                                                        onClick={() => copyToClipboard(poll.token_contract)}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            copyToClipboard(poll.token_contract);
+                                                        }}
                                                         title="Copy contract address"
                                                     >
                                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -555,91 +455,88 @@ const Section = () => {
                                                 </span>
                                             )}
                                         </div>
-                                    </div>
 
-                                    {hasVoted(poll) && (
-                                        <div className="voted-notification">
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                                                <polyline points="22,4 12,14.01 9,11.01"></polyline>
-                                            </svg>
-                                            You voted on this poll
-                                            {poll.userVote > 0 && (
-                                                <span className="vote-detail">(Option {poll.userVote})</span>
-                                            )}
-                                        </div>
-                                    )}
 
-                                    <div className="poll-options">
-                                        {poll.options.map((opt, index) => {
-                                            console.log('Rendering option:', opt, 'Type:', typeof opt);
 
-                                            const votes = opt.votes ?? 0;
-                                            const votingPower = opt.voting_power ?? votes;
-                                            const totalVotes = poll.totalVotes ?? 0;
-                                            const totalVotingPower = poll.totalVotingPower ?? totalVotes;
-                                            const pct = getVotePercentage(votingPower, totalVotingPower);
-                                            const votedThis = hasVoted(poll) && poll.userVote === optionId;
 
-                                            // Handle different option structures
-                                            const optionText = opt.text || opt.option || opt.toString() || 'Unknown Option';
-                                            const optionId = opt.id || opt.option_id || index + 1;
+                                        <div className="poll-options">
+                                            {poll.options.map((opt, index) => {
+                                                console.log('Rendering option:', opt, 'Type:', typeof opt);
 
-                                            console.log('Processed option:', { optionText, optionId, optionType: typeof optionText });
+                                                // Handle different option structures
+                                                const optionText = opt.text || opt.option || opt.toString() || 'Unknown Option';
+                                                const optionId = opt.id || opt.option_id || index + 1;
 
-                                            return (
-                                                <div key={optionId} className={`poll-option ${votedThis ? 'voted' : ''}`}>
-                                                    <div className="option-content">
-                                                        <div className="option-info">
-                                                            <div className="option-text">{String(optionText)}</div>
-                                                            <div className="option-stats">
-                                                                <span className="voting-power">{votingPower} voting power</span>
-                                                                <span className="percentage">({pct}%)</span>
-                                                                {votedThis && (
-                                                                    <span className="your-vote">
-                                                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                const votes = opt.votes ?? 0;
+                                                const votingPower = opt.voting_power ?? votes;
+                                                const totalVotes = poll.totalVotes ?? 0;
+                                                const totalVotingPower = poll.totalVotingPower ?? totalVotes;
+                                                const pct = getVotePercentage(votingPower, totalVotingPower);
+                                                const votedThis = hasVoted(poll) && poll.userVote === optionId;
+
+                                                console.log('Processed option:', { optionText, optionId, optionType: typeof optionText });
+
+                                                return (
+                                                    <div
+                                                        key={optionId}
+                                                        className={`poll-option ${votedThis ? 'voted' : ''}`}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        <div className="option-content">
+                                                            <div className="option-info">
+                                                                <div className="option-text">{String(optionText)}</div>
+                                                                <div className="option-stats">
+                                                                    <span className="voting-power">{votingPower} voting power</span>
+                                                                    <span className="percentage">({pct}%)</span>
+                                                                    {votedThis && (
+                                                                        <span className="your-vote">
+                                                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                                                <polyline points="20,6 9,17 4,12"></polyline>
+                                                                            </svg>
+                                                                            Your Vote
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <button
+                                                                className={`btn ${votedThis ? 'btn-success' : hasVoted(poll) ? 'btn-secondary' : 'btn-primary'}`}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    vote(poll.id, optionId);
+                                                                }}
+                                                                disabled={hasVoted(poll) || pollExpired(poll) || votingPolls.has(poll.id)}
+                                                            >
+                                                                {votingPolls.has(poll.id) ? (
+                                                                    <>
+                                                                        <svg className="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                                            <path d="M21 12a9 9 0 11-6.219-8.56"></path>
+                                                                        </svg>
+                                                                        Voting...
+                                                                    </>
+                                                                ) : votedThis ? (
+                                                                    <>
+                                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                                                             <polyline points="20,6 9,17 4,12"></polyline>
                                                                         </svg>
-                                                                        Your Vote
-                                                                    </span>
+                                                                        Voted
+                                                                    </>
+                                                                ) : hasVoted(poll) ? (
+                                                                    'Already Voted'
+                                                                ) : (
+                                                                    'Vote'
                                                                 )}
-                                                            </div>
+                                                            </button>
                                                         </div>
-                                                        <button
-                                                            className={`btn ${votedThis ? 'btn-success' : hasVoted(poll) ? 'btn-secondary' : 'btn-primary'}`}
-                                                            onClick={() => vote(poll.id, optionId)}
-                                                            disabled={hasVoted(poll) || pollExpired(poll) || votingPolls.has(poll.id)}
-                                                        >
-                                                            {votingPolls.has(poll.id) ? (
-                                                                <>
-                                                                    <svg className="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                                        <path d="M21 12a9 9 0 11-6.219-8.56"></path>
-                                                                    </svg>
-                                                                    Voting...
-                                                                </>
-                                                            ) : votedThis ? (
-                                                                <>
-                                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                                        <polyline points="20,6 9,17 4,12"></polyline>
-                                                                    </svg>
-                                                                    Voted
-                                                                </>
-                                                            ) : hasVoted(poll) ? (
-                                                                'Already Voted'
-                                                            ) : (
-                                                                'Vote'
-                                                            )}
-                                                        </button>
+                                                        <div className="progress">
+                                                            <div
+                                                                className="progress-bar"
+                                                                style={{ width: `${pct}%` }}
+                                                            />
+                                                        </div>
                                                     </div>
-                                                    <div className="progress">
-                                                        <div
-                                                            className="progress-bar"
-                                                            style={{ width: `${pct}%` }}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 </div>
                             ))}

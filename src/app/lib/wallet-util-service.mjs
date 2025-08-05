@@ -1,15 +1,20 @@
-import XianWalletUtils from "./js/xian-dapp-utils";
+import XianWalletUtils from './js/xian-dapp-utils.js';
 
 export default class WalletUtilService {
-    constructor() {
-        XianWalletUtils.init('https://node.xian.org');
+  static instance;
+
+  constructor() {
+    if (WalletUtilService.instance) {
+      return WalletUtilService.instance;
     }
-    static instance = null;
-    static getInstance() {
-        if (WalletUtilService.instance === null) {
-            WalletUtilService.instance = new WalletUtilService();
-        }
-        return WalletUtilService.instance;
+    this.XianWalletUtils = XianWalletUtils;
+    WalletUtilService.instance = this;
+  }
+
+  static getInstance() {
+    if (!WalletUtilService.instance) {
+      new WalletUtilService();
     }
-    XianWalletUtils = XianWalletUtils
+    return WalletUtilService.instance;
+  }
 }

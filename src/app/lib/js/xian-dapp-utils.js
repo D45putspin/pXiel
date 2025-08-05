@@ -93,51 +93,55 @@ const XianWalletUtils = {
     });
   },
 
-  requestWalletInfo: async function () {
-    // If wallet is already being unlocked, wait for it
-    if (this.isUnlocking) {
-      console.log('Wallet is already being unlocked, waiting...');
-      await this.waitForWalletReady();
-      return new Promise((resolve, reject) => {
-        this.state.walletInfo.requests.push(resolve);
-        setTimeout(() => reject(new Error('Xian Wallet not responding')), 2000);
-        if (typeof document !== 'undefined') {
-          document.dispatchEvent(new CustomEvent('xianWalletGetInfo'));
-        }
-      });
-    }
-
-    // If wallet is already ready, just return the info
-    if (this.isWalletReady) {
-      return new Promise((resolve, reject) => {
-        this.state.walletInfo.requests.push(resolve);
-        setTimeout(() => reject(new Error('Xian Wallet not responding')), 2000);
-        if (typeof document !== 'undefined') {
-          document.dispatchEvent(new CustomEvent('xianWalletGetInfo'));
-        }
-      });
-    }
-
-    // Set unlocking state to prevent multiple requests
-    this.isUnlocking = true;
-    console.log('Requesting wallet unlock...');
-
-    // Trigger wallet unlock by dispatching the event
+ requestWalletInfo: async function () {
+  // If wallet is already being unlocked, wait for it
+if (this.isUnlocking) {
+  console.log('Wallet is already being unlocked, waiting...');
+  await this.waitForWalletReady();
+  
+  // Wallet is now ready, just get the info without triggering unlock
+  return new Promise((resolve, reject) => {
+    this.state.walletInfo.requests.push(resolve);
+    setTimeout(() => reject(new Error('Xian Wallet not responding')), 2000);
+    
+    // Just get info, don't trigger unlock since wallet is already ready
     if (typeof document !== 'undefined') {
       document.dispatchEvent(new CustomEvent('xianWalletGetInfo'));
     }
-    
+  });
+}
+
+  // If wallet is already ready, just return the info
+  if (this.isWalletReady) {
     return new Promise((resolve, reject) => {
-      this.state.walletInfo.requests.push((info) => {
-        this.isUnlocking = false; // Reset unlocking state
-        resolve(info);
-      });
-      setTimeout(() => {
-        this.isUnlocking = false; // Reset unlocking state on timeout
-        reject(new Error('Xian Wallet not responding'));
-      }, 2000);
+      this.state.walletInfo.requests.push(resolve);
+      setTimeout(() => reject(new Error('Xian Wallet not responding')), 2000);
+      if (typeof document !== 'undefined') {
+        document.dispatchEvent(new CustomEvent('xianWalletGetInfo'));
+      }
     });
-  },
+  }
+
+  // Set unlocking state to prevent multiple requests
+  this.isUnlocking = true;
+  console.log('Requesting wallet unlock...');
+
+  // Trigger wallet unlock by dispatching the event
+  if (typeof document !== 'undefined') {
+    document.dispatchEvent(new CustomEvent('xianWalletGetInfo'));
+  }
+  
+  return new Promise((resolve, reject) => {
+    this.state.walletInfo.requests.push((info) => {
+      this.isUnlocking = false; // Reset unlocking state
+      resolve(info);
+    });
+    setTimeout(() => {
+      this.isUnlocking = false; // Reset unlocking state on timeout
+      reject(new Error('Xian Wallet not responding'));
+    }, 2000);
+  });
+},
 
   signMessage: async function (message) {
     await this.waitForWalletReady();
