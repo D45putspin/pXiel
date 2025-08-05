@@ -223,7 +223,10 @@ const PollDetail = ({ pollId }) => {
                     <h3>Vote Options</h3>
                     <div className="options-list">
                         {poll.options.map(opt => {
-                            const pct = getVotePercentage(opt.voting_power, poll.totalVotingPower);
+                            console.log('Option data:', opt);
+                            const votes = opt.votes ?? 0;
+                            const votingPower = opt.voting_power ?? votes;
+                            const pct = getVotePercentage(votingPower, poll.totalVotingPower);
                             const votedThis = poll.userVote === opt.id;
 
                             return (
@@ -232,7 +235,7 @@ const PollDetail = ({ pollId }) => {
                                         <div className="option-info">
                                             <div className="option-text">{opt.text}</div>
                                             <div className="option-stats">
-                                                <span className="voting-power">{opt.voting_power} voting power</span>
+                                                <span className="voting-power">{votingPower} voting power</span>
                                                 <span className="percentage">({pct}%)</span>
                                                 {votedThis && (
                                                     <span className="your-vote">

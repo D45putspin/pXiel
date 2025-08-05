@@ -130,7 +130,7 @@ const Section = () => {
 
     const sortedPolls = [...filteredPolls].sort((a, b) => {
         const now = new Date();
-
+        console.log(a, b)
         switch (sortBy) {
             case 'newest':
                 return b.id - a.id;
@@ -182,7 +182,7 @@ const Section = () => {
     };
 
     const formatTokenName = (tokenContract) => {
-        console.log(tokenContract)
+
         if (!tokenContract) return 'Unknown Token';
 
         // Remove common prefixes and format nicely
@@ -191,7 +191,7 @@ const Section = () => {
             .replace(/^token/, '') // Remove 'token' prefix
             .replace(/_/g, ' ') // Replace underscores with spaces
             .replace(/\b\w/g, l => l.toUpperCase()); // Capitalize first letter of each word
-
+        if (cleanName === "Currency") return "XIAN";
         return cleanName || 'Unknown Token';
     };
 
@@ -205,7 +205,7 @@ const Section = () => {
         try {
             await navigator.clipboard.writeText(text);
             // You could add a toast notification here
-            console.log('Copied to clipboard:', text);
+
         } catch (err) {
             console.error('Failed to copy to clipboard:', err);
         }
@@ -405,13 +405,13 @@ const Section = () => {
                                                         <path d="M9.69 16H2.21"></path>
                                                         <path d="M14.31 16l-5.74-9.94"></path>
                                                     </svg>
-                                                    {formatTokenName(poll.token_contract)}
+                                                    {formatTokenName(poll.tokenContract)}
                                                 </span>
                                             </div>
                                             <div className="token-info">
                                                 <span className="token-label">Voting Token:</span>
-                                                <span className="token-name">{formatTokenName(poll.token_contract)}</span>
-                                                {poll.token_contract && (
+                                                <span className="token-name">{formatTokenName(poll.tokenContract)}</span>
+                                                {poll.tokenContract && (
                                                     <button
                                                         className="token-copy-btn"
                                                         onClick={(e) => {
@@ -462,7 +462,6 @@ const Section = () => {
 
                                         <div className="poll-options">
                                             {poll.options.map((opt, index) => {
-                                                console.log('Rendering option:', opt, 'Type:', typeof opt);
 
                                                 // Handle different option structures
                                                 const optionText = opt.text || opt.option || opt.toString() || 'Unknown Option';
@@ -475,7 +474,6 @@ const Section = () => {
                                                 const pct = getVotePercentage(votingPower, totalVotingPower);
                                                 const votedThis = hasVoted(poll) && poll.userVote === optionId;
 
-                                                console.log('Processed option:', { optionText, optionId, optionType: typeof optionText });
 
                                                 return (
                                                     <div

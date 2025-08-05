@@ -9,8 +9,8 @@ export default function MyVotesPage() {
   const client = createApolloClient();
 
   return (
-    <ApolloProvider client={client}>
+   
       <MyVotes />
-    </ApolloProvider>
+  
   )
 } 
