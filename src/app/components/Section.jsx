@@ -11,7 +11,7 @@ import {
 import WalletUtilService from '../lib/wallet-util-service';
 import { usePollsQuery } from '../fn/usePollsQuery';
 
-const CONTRACT = "con_xipoll_v0";
+const CONTRACT = "con_xipoll_v0_clean";
 
 const Section = () => {
     const router = useRouter();

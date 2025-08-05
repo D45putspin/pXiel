@@ -8,9 +8,9 @@ query XIPollData {
   allStates(
     filter: {
       or: [
-        { key: { equalTo: "con_xipoll_v0.poll_counter" } }
-        { key: { startsWith: "con_xipoll_v0.polls:" } }
-        { key: { startsWith: "con_xipoll_v0.user_votes:" } }
+        { key: { equalTo: "con_xipoll_v0_clean.poll_counter" } }
+        { key: { startsWith: "con_xipoll_v0_clean.polls:" } }
+        { key: { startsWith: "con_xipoll_v0_clean.user_votes:" } }
       ]
     }
   ) {
@@ -69,7 +69,7 @@ export function usePollsQuery() {
 
     for (const { key, value } of nodes) {
       // Filter for our contract
-      if (!key.startsWith('con_xipoll_v0.')) continue;
+      if (!key.startsWith('con_xipoll_v0_clean.')) continue;
       
       try {
         // The value is already a JSON object, no need to decode
