@@ -1,5 +1,6 @@
 import React from 'react';
 import { gql, useQuery } from '@apollo/client';
+import WalletUtilService from '../lib/wallet-util-service';
 
 // GraphQL query to batch-fetch polls, votes and counters
 const XIPOLL_DATA = gql`
@@ -33,6 +34,28 @@ export function usePollsQuery() {
     pollInterval: 10000, // Refetch every 10 seconds to reduce frequency
     errorPolicy: 'all', // Allow partial results
   });
+
+  // Get current user's address
+  const [currentUserAddress, setCurrentUserAddress] = React.useState(null);
+
+  React.useEffect(() => {
+    const getCurrentUserAddress = async () => {
+      try {
+        const xianWalletUtilInstance = WalletUtilService.getInstance().XianWalletUtils;
+        if (xianWalletUtilInstance && !xianWalletUtilInstance.initialized) {
+          await xianWalletUtilInstance.init();
+        }
+        if (xianWalletUtilInstance) {
+          const walletInfo = await xianWalletUtilInstance.requestWalletInfo();
+          setCurrentUserAddress(walletInfo.address);
+        }
+      } catch (error) {
+        console.warn('Failed to get current user address:', error);
+      }
+    };
+
+    getCurrentUserAddress();
+  }, []);
 
   // Log for debugging
  
@@ -68,7 +91,7 @@ export function usePollsQuery() {
 
     // Build normalized list
     return Object.values(pollsMap).map(p => {
-      const userKey = `${p.creator}_${p.id}`; // adjust if needed
+      const userKey = currentUserAddress ? `${currentUserAddress}_${p.id}` : null;
       return {
         id: p.id,
         title: p.title,
@@ -79,11 +102,11 @@ export function usePollsQuery() {
         createdAt: new Date(p.created_at),
         endDate: new Date(p.end_date),
         isActive: new Date() <= new Date(p.end_date),
-        userVote: votesMap[userKey]?.option_id || 0,
+        userVote: userKey ? (votesMap[userKey]?.option_id || 0) : 0,
         tokenContract: p.token_contract,
       };
     });
-  }, [data]);
+  }, [data, currentUserAddress]);
 
   return { polls, loading, error, refetch };
 }

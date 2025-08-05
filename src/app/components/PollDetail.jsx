@@ -8,6 +8,7 @@ import {
     handlePollError
 } from "../lib/js/main";
 import WalletUtilService from '../lib/wallet-util-service';
+import { usePollsQuery } from '../fn/usePollsQuery';
 
 const CONTRACT = "con_xipoll_v0";
 
@@ -15,10 +16,13 @@ const PollDetail = ({ pollId }) => {
     const router = useRouter();
     const xianWalletUtilInstance = WalletUtilService.getInstance().XianWalletUtils;
     const { addUserVote } = useStore();
-    const [poll, setPoll] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
     const [voting, setVoting] = useState(false);
+
+    // Use GraphQL query instead of fetchAllPolls
+    const { polls, loading, error, refetch } = usePollsQuery();
+
+    // Find the specific poll from the query results
+    const poll = polls.find(p => p.id.toString() === pollId.toString());
 
     useEffect(() => {
         if (xianWalletUtilInstance && !xianWalletUtilInstance.initialized) {
@@ -32,197 +36,91 @@ const PollDetail = ({ pollId }) => {
         return Number.isNaN(ms) ? null : new Date(ms);
     };
 
-    useEffect(() => {
-        async function fetchPoll() {
-            try {
-                setLoading(true);
-                const walletInfo = await xianWalletUtilInstance.requestWalletInfo();
-                const address = walletInfo.address;
-                const rawPolls = await xianWalletUtilInstance.fetchAllPolls(CONTRACT);
-
-                const targetPoll = rawPolls.find(p => p.id.toString() === pollId.toString());
-
-                if (!targetPoll) {
-                    setError('Poll not found');
-                    setLoading(false);
-                    return;
-                }
-
-                const createdStr = targetPoll.created_at ?? targetPoll.createdAt;
-                const endStr = targetPoll.end_date ?? targetPoll.endDate;
-                const createdAt = toDate(createdStr);
-                const endDate = toDate(endStr);
-                const userVote = await xianWalletUtilInstance.getUserVote(CONTRACT, targetPoll.id, address);
-
-                // Normalize options with vote counts
-                let options = [];
-                if (Array.isArray(targetPoll.options)) {
-                    options = targetPoll.options.map((opt, idx) => {
-                        const id = typeof opt === 'object' && opt !== null
-                            ? (opt.id ?? opt.option_id ?? idx + 1)
-                            : idx + 1;
-                        const text = typeof opt === 'object' && opt !== null
-                            ? (opt.text ?? opt.option ?? String(opt))
-                            : String(opt);
-                        const votes = opt.votes ?? 0;
-                        const voting_power = opt.voting_power ?? opt.votes ?? 0;
-                        return { id, text, votes, voting_power };
-                    });
-                } else if (targetPoll.options && typeof targetPoll.options === 'object') {
-                    options = Object.entries(targetPoll.options).map(([key, value], idx) => ({
-                        id: parseInt(key) || idx + 1,
-                        text: typeof value === 'string'
-                            ? value
-                            : (value?.text ?? String(value)),
-                        votes: value.votes ?? 0,
-                        voting_power: value.voting_power ?? value.votes ?? 0
-                    }));
-                }
-
-                const pollData = {
-                    id: targetPoll.id,
-                    title: targetPoll.title || 'Untitled Poll',
-                    options,
-                    totalVotes: targetPoll.total_votes ?? targetPoll.totalVotes ?? 0,
-                    totalVotingPower: targetPoll.total_voting_power ?? targetPoll.totalVotingPower ?? 0,
-                    token_contract: targetPoll.token_contract ?? targetPoll.tokenContract,
-                    creator: targetPoll.creator || 'Unknown',
-                    createdAt,
-                    endDate,
-                    isActive: endDate ? (new Date() <= endDate) : false,
-                    userVote: userVote || 0
-                };
-
-                setPoll(pollData);
-            } catch (err) {
-                console.error("Failed to fetch poll:", err);
-                setError('Failed to load poll');
-            } finally {
-                setLoading(false);
-            }
-        }
-
-        if (xianWalletUtilInstance && pollId) {
-            fetchPoll();
-        }
-    }, [pollId, xianWalletUtilInstance]);
+    // simplified single source of truth for voting state
+    const hasVoted = (p) => (p?.userVote ?? 0) > 0;
 
     const vote = async (optionId) => {
         if (voting || !poll) return;
-
         setVoting(true);
 
         try {
             await xianWalletUtilInstance.sendTransaction(
                 CONTRACT,
                 "vote",
-                { poll_id: parseInt(poll.id), option_id: parseInt(optionId) }
+                { poll_id: Number(poll.id), option_id: Number(optionId) }
             );
 
+            // optimistic update in store
             addUserVote(poll.id, optionId);
             handleVoteSubmission();
 
-            // Refresh poll data
-            const walletInfo = await xianWalletUtilInstance.requestWalletInfo();
-            const address = walletInfo.address;
-            const rawPolls = await xianWalletUtilInstance.fetchAllPolls(CONTRACT);
-            const targetPoll = rawPolls.find(p => p.id.toString() === pollId.toString());
-
-            if (targetPoll) {
-                const userVote = await xianWalletUtilInstance.getUserVote(CONTRACT, targetPoll.id, address);
-
-                // Update poll with new data
-                setPoll(prev => ({
-                    ...prev,
-                    userVote: userVote || 0,
-                    options: prev.options.map(opt => {
-                        const updatedOpt = targetPoll.options.find(t =>
-                            (t.id || t.option_id) === opt.id ||
-                            (typeof t === 'object' && t.text === opt.text)
-                        );
-                        return {
-                            ...opt,
-                            votes: updatedOpt?.votes ?? opt.votes,
-                            voting_power: updatedOpt?.voting_power ?? opt.voting_power
-                        };
-                    }),
-                    totalVotes: targetPoll.total_votes ?? targetPoll.totalVotes ?? 0,
-                    totalVotingPower: targetPoll.total_voting_power ?? targetPoll.totalVotingPower ?? 0
-                }));
-            }
-        } catch (error) {
-            console.error('Vote error:', error);
-            handlePollError(error);
+            // Refetch data to get updated on-chain state
+            await refetch();
+        } catch (err) {
+            console.error('Vote error:', err);
+            handlePollError(err);
         } finally {
             setVoting(false);
         }
     };
 
-    const getVotePercentage = (votes, total) => total > 0 ? Math.round((votes / total) * 100) : 0;
-    const hasVoted = (poll) => (poll?.userVote || 0) > 0;
-    const pollExpired = (poll) => !poll?.isActive;
+    const getVotePercentage = (votes, total) =>
+        total > 0 ? Math.round((votes / total) * 100) : 0;
+
+    const pollExpired = (p) => !p?.isActive;
 
     const getTimeRemaining = (endDate) => {
         if (!endDate) return null;
         const now = new Date();
         const diff = endDate.getTime() - now.getTime();
-
         if (diff <= 0) return 'Ended';
-
-        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-
+        const days = Math.floor(diff / 86400000);
+        const hours = Math.floor((diff % 86400000) / 3600000);
+        const mins = Math.floor((diff % 3600000) / 60000);
         if (days > 0) return `${days}d ${hours}h`;
-        if (hours > 0) return `${hours}h ${minutes}m`;
-        return `${minutes}m`;
+        if (hours > 0) return `${hours}h ${mins}m`;
+        return `${mins}m`;
     };
 
-    const formatTokenName = (tokenContract) => {
-        if (!tokenContract) return 'Unknown Token';
-
-        const cleanName = tokenContract
+    const formatTokenName = (contract) => {
+        if (!contract) return 'Unknown Token';
+        return contract
             .replace(/^con_/, '')
             .replace(/^token/, '')
             .replace(/_/g, ' ')
             .replace(/\b\w/g, l => l.toUpperCase());
-
-        return cleanName || 'Unknown Token';
     };
 
-    const truncateAddress = (address, maxLength = 20) => {
+    const truncateAddress = (address, max = 20) => {
         if (!address) return '';
-        if (address.length <= maxLength) return address;
-        return address.slice(0, maxLength - 3) + '...';
+        return address.length <= max ? address : `${address.slice(0, max - 3)}...`;
     };
 
     const copyToClipboard = async (text) => {
         try {
             await navigator.clipboard.writeText(text);
-            console.log('Copied to clipboard:', text);
         } catch (err) {
-            console.error('Failed to copy to clipboard:', err);
+            console.error('Failed to copy:', err);
         }
     };
+
     const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
     const getEmbedCode = () => {
-
-        const embedUrl = `${baseUrl}/embed/poll/${poll.id}`;
-        return `<iframe 
-  src="${embedUrl}"
+        const url = `${baseUrl}/embed/poll/${poll.id}`;
+        return `<iframe
+  src="${url}"
   width="500px"
   height="800px"
   frameborder="0"
   scrolling="yes"
-  style="border: 1px solid #ddd; border-radius: 8px;"
+  style="border:1px solid #ddd; border-radius:8px;"
   title="XiPOLL - ${poll.title}"
 ></iframe>`;
     };
 
     const handleSharePoll = async () => {
-        const embedCode = getEmbedCode();
-        await copyToClipboard(embedCode);
-        // You could add a toast notification here
+        const code = getEmbedCode();
+        await copyToClipboard(code);
         alert('Embed code copied to clipboard!');
     };
 
@@ -245,7 +143,7 @@ const PollDetail = ({ pollId }) => {
                 <div className="container">
                     <div className="error-state">
                         <h2>Poll Not Found</h2>
-                        <p>{error || 'The poll you are looking for does not exist.'}</p>
+                        <p>{error?.message || 'The poll you are looking for does not exist.'}</p>
                         <button className="btn btn-primary" onClick={() => router.push('/')}>
                             Back to Polls
                         </button>
@@ -262,7 +160,7 @@ const PollDetail = ({ pollId }) => {
                 <div className="back-button-container">
                     <button className="btn btn-secondary" onClick={() => router.push('/')}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <polyline points="15,18 9,12 15,6"></polyline>
+                            <polyline points="15,18 9,12 15,6" />
                         </svg>
                         Back to Polls
                     </button>
@@ -273,52 +171,16 @@ const PollDetail = ({ pollId }) => {
                     <div className="poll-title-section">
                         <h1 className="poll-title">{poll.title}</h1>
                         <div className="poll-meta">
-                            <span className="creator">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                                    <circle cx="12" cy="7" r="4"></circle>
-                                </svg>
-                                Created by {poll.creator}
-                            </span>
-                            <span className="token">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <path d="M14.31 8l5.74 9.94"></path>
-                                    <path d="M9.69 8h11.48"></path>
-                                    <path d="M7.38 12l5.74-9.94"></path>
-                                    <path d="M9.69 16H2.21"></path>
-                                    <path d="M14.31 16l-5.74-9.94"></path>
-                                </svg>
-                                {formatTokenName(poll.token_contract)}
-                            </span>
+                            <span className="creator">Created by {poll.creator}</span>
+                            <span className="token">{formatTokenName(poll.tokenContract)}</span>
                         </div>
                     </div>
-
                     <div className="poll-status-section">
-                        {hasVoted(poll) && (
-                            <span className="tag tag-success">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <polyline points="20,6 9,17 4,12"></polyline>
-                                </svg>
-                                You Voted
-                            </span>
-                        )}
+                        {hasVoted(poll) && <span className="tag tag-success">You Voted</span>}
                         {pollExpired(poll) ? (
-                            <span className="tag tag-warning">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <polyline points="12,6 12,12 16,14"></polyline>
-                                </svg>
-                                Poll Ended
-                            </span>
+                            <span className="tag tag-warning">Poll Ended</span>
                         ) : (
-                            <span className="tag tag-info">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <polyline points="12,6 12,12 16,14"></polyline>
-                                </svg>
-                                {getTimeRemaining(poll.endDate)} remaining
-                            </span>
+                            <span className="tag tag-info">{getTimeRemaining(poll.endDate)} remaining</span>
                         )}
                     </div>
                 </div>
@@ -343,18 +205,14 @@ const PollDetail = ({ pollId }) => {
                 <div className="token-info-card">
                     <h3>Voting Token</h3>
                     <div className="token-details">
-                        <span className="token-name">{formatTokenName(poll.token_contract)}</span>
-                        {poll.token_contract && (
+                        <span className="token-name">{formatTokenName(poll.tokenContract)}</span>
+                        {poll.tokenContract && (
                             <button
-                                className="token-copy-btn"
-                                onClick={() => copyToClipboard(poll.token_contract)}
+                                className="token-ioqpoqz-btn"
+                                onClick={() => copyToClipboard(poll.tokenContract)}
                                 title="Copy contract address"
                             >
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                </svg>
-                                {truncateAddress(poll.token_contract)}
+                                {truncateAddress(poll.tokenContract)}
                             </button>
                         )}
                     </div>
@@ -364,13 +222,9 @@ const PollDetail = ({ pollId }) => {
                 <div className="poll-options-detail">
                     <h3>Vote Options</h3>
                     <div className="options-list">
-                        {poll.options.map((opt, index) => {
-                            const votes = opt.votes ?? 0;
-                            const votingPower = opt.voting_power ?? votes;
-                            const totalVotes = poll.totalVotes ?? 0;
-                            const totalVotingPower = poll.totalVotingPower ?? totalVotes;
-                            const pct = getVotePercentage(votingPower, totalVotingPower);
-                            const votedThis = hasVoted(poll) && poll.userVote === opt.id;
+                        {poll.options.map(opt => {
+                            const pct = getVotePercentage(opt.voting_power, poll.totalVotingPower);
+                            const votedThis = poll.userVote === opt.id;
 
                             return (
                                 <div key={opt.id} className={`poll-option-detail ${votedThis ? 'voted' : ''}`}>
@@ -378,12 +232,12 @@ const PollDetail = ({ pollId }) => {
                                         <div className="option-info">
                                             <div className="option-text">{opt.text}</div>
                                             <div className="option-stats">
-                                                <span className="voting-power">{votingPower} voting power</span>
+                                                <span className="voting-power">{opt.voting_power} voting power</span>
                                                 <span className="percentage">({pct}%)</span>
                                                 {votedThis && (
                                                     <span className="your-vote">
                                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                            <polyline points="20,6 9,17 4,12"></polyline>
+                                                            <polyline points="20,6 9,17 4,12" />
                                                         </svg>
                                                         Your Vote
                                                     </span>
@@ -398,14 +252,14 @@ const PollDetail = ({ pollId }) => {
                                             {voting ? (
                                                 <>
                                                     <svg className="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                        <path d="M21 12a9 9 0 11-6.219-8.56"></path>
+                                                        <path d="M21 12a9 9 0 11-6.219-8.56" />
                                                     </svg>
                                                     Voting...
                                                 </>
                                             ) : votedThis ? (
                                                 <>
                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                        <polyline points="20,6 9,17 4,12"></polyline>
+                                                        <polyline points="20,6 9,17 4,12" />
                                                     </svg>
                                                     Voted
                                                 </>
@@ -417,10 +271,7 @@ const PollDetail = ({ pollId }) => {
                                         </button>
                                     </div>
                                     <div className="progress">
-                                        <div
-                                            className="progress-bar"
-                                            style={{ width: `${pct}%` }}
-                                        />
+                                        <div className="progress-bar" style={{ width: `${pct}%` }} />
                                     </div>
                                 </div>
                             );
@@ -432,14 +283,12 @@ const PollDetail = ({ pollId }) => {
                 <div className="embed-code-section">
                     <h3>Embed Poll</h3>
                     <p>Copy and paste this code into your website to embed the poll:</p>
-                    <pre className="embed-code-pre">
-                        {getEmbedCode()}
-                    </pre>
+                    <pre className="embed-code-pre">{getEmbedCode()}</pre>
                     <button className="btn btn-primary" onClick={handleSharePoll}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                            <circle cx="9" cy="9" r="2"></circle>
-                            <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                            <circle cx="9" cy="9" r="2" />
+                            <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
                         </svg>
                         Copy Embed Code
                     </button>
@@ -448,7 +297,7 @@ const PollDetail = ({ pollId }) => {
                 {/* Embed Preview Section */}
                 <div className="embed-preview-section">
                     <h3>Preview</h3>
-                    <p>Here&apos;s how the embedded poll will look on other websites:</p>
+                    <p>Here's how the embedded poll will look on other websites:</p>
                     <div className="embed-preview-container">
                         <iframe
                             src={`${baseUrl}/embed/poll/${poll.id}`}
@@ -466,4 +315,4 @@ const PollDetail = ({ pollId }) => {
     );
 };
 
-export default PollDetail; 
+export default PollDetail;

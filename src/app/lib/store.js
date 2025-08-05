@@ -18,7 +18,7 @@ const useStore = create((set, get) => ({
     // Vote management
     setUserVotes: (votes) => set({ userVotes: votes }),
     addUserVote: (pollId, optionId) => set((state) => ({
-        userVotes: { ...state.userVotes, [pollId]: optionId }
+        userVotes: { ...state.userVotes, [pollId]: parseInt(optionId) }
     })),
     
     // Legacy counter (keeping for compatibility)

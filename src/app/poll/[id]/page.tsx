@@ -2,6 +2,8 @@
 
 import React from 'react';
 import PollDetail from '../../components/PollDetail';
+import { ApolloProvider } from '@apollo/client';
+import { createApolloClient } from '../../lib/apolloClient';
 
 interface PollPageProps {
   params: {
@@ -10,11 +12,15 @@ interface PollPageProps {
 }
 
 export default function PollPage({ params }: PollPageProps) {
+  const client = createApolloClient();
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
-      <div className="container mx-auto px-4 py-8">
-        <PollDetail pollId={params.id} />
+    <ApolloProvider client={client}>
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
+        <div className="container mx-auto px-4 py-8">
+          <PollDetail pollId={params.id} />
+        </div>
       </div>
-    </div>
+    </ApolloProvider>
   );
 } 

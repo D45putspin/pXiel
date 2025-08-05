@@ -7,16 +7,20 @@ import {
     handlePollError
 } from "../lib/js/main";
 import WalletUtilService from '../lib/wallet-util-service';
+import { usePollsQuery } from '../fn/usePollsQuery';
 
 const CONTRACT = "con_xipoll_v0";
 
 const EmbedSinglePoll = ({ pollId }) => {
     const xianWalletUtilInstance = WalletUtilService.getInstance().XianWalletUtils;
     const { addUserVote } = useStore();
-    const [poll, setPoll] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
     const [voting, setVoting] = useState(false);
+
+    // Use GraphQL query instead of fetchAllPolls
+    const { polls, loading, error, refetch } = usePollsQuery();
+
+    // Find the specific poll from the query results
+    const poll = polls.find(p => p.id.toString() === pollId.toString());
 
     useEffect(() => {
         if (xianWalletUtilInstance && !xianWalletUtilInstance.initialized) {
@@ -30,125 +34,26 @@ const EmbedSinglePoll = ({ pollId }) => {
         return Number.isNaN(ms) ? null : new Date(ms);
     };
 
-    useEffect(() => {
-        async function fetchPoll() {
-            try {
-                setLoading(true);
-                const walletInfo = await xianWalletUtilInstance.requestWalletInfo();
-                const address = walletInfo.address;
-                const rawPolls = await xianWalletUtilInstance.fetchAllPolls(CONTRACT);
-
-                const targetPoll = rawPolls.find(p => p.id.toString() === pollId.toString());
-
-                if (!targetPoll) {
-                    setError('Poll not found');
-                    setLoading(false);
-                    return;
-                }
-
-                const createdStr = targetPoll.created_at ?? targetPoll.createdAt;
-                const endStr = targetPoll.end_date ?? targetPoll.endDate;
-                const createdAt = toDate(createdStr);
-                const endDate = toDate(endStr);
-                const userVote = await xianWalletUtilInstance.getUserVote(CONTRACT, targetPoll.id, address);
-
-                let options = [];
-                if (Array.isArray(targetPoll.options)) {
-                    options = targetPoll.options.map((opt, idx) => {
-                        const id = typeof opt === 'object' && opt !== null
-                            ? (opt.id ?? opt.option_id ?? idx + 1)
-                            : idx + 1;
-                        const text = typeof opt === 'object' && opt !== null
-                            ? (opt.text ?? opt.option ?? String(opt))
-                            : String(opt);
-                        const votes = opt.votes ?? 0;
-                        const voting_power = opt.voting_power ?? opt.votes ?? 0;
-                        return { id, text, votes, voting_power };
-                    });
-                } else if (targetPoll.options && typeof targetPoll.options === 'object') {
-                    options = Object.entries(targetPoll.options).map(([key, value], idx) => ({
-                        id: parseInt(key) || idx + 1,
-                        text: typeof value === 'string'
-                            ? value
-                            : (value?.text ?? String(value)),
-                        votes: value.votes ?? 0,
-                        voting_power: value.voting_power ?? value.votes ?? 0
-                    }));
-                }
-
-                const pollData = {
-                    id: targetPoll.id,
-                    title: targetPoll.title || 'Untitled Poll',
-                    options,
-                    totalVotes: targetPoll.total_votes ?? targetPoll.totalVotes ?? 0,
-                    totalVotingPower: targetPoll.total_voting_power ?? targetPoll.totalVotingPower ?? 0,
-                    token_contract: targetPoll.token_contract ?? targetPoll.tokenContract,
-                    creator: targetPoll.creator || 'Unknown',
-                    createdAt,
-                    endDate,
-                    isActive: endDate ? (new Date() <= endDate) : false,
-                    userVote: userVote || 0
-                };
-
-                setPoll(pollData);
-            } catch (err) {
-                console.error("Failed to fetch poll:", err);
-                setError('Failed to load poll');
-            } finally {
-                setLoading(false);
-            }
-        }
-
-        if (xianWalletUtilInstance && pollId) {
-            fetchPoll();
-        }
-    }, [pollId, xianWalletUtilInstance]);
-
     const vote = async (optionId) => {
         if (voting || !poll) return;
-
         setVoting(true);
 
         try {
             await xianWalletUtilInstance.sendTransaction(
                 CONTRACT,
                 "vote",
-                { poll_id: parseInt(poll.id), option_id: parseInt(optionId) }
+                { poll_id: Number(poll.id), option_id: Number(optionId) }
             );
 
+            // optimistic update in store
             addUserVote(poll.id, optionId);
             handleVoteSubmission();
 
-            // Refresh poll data
-            const walletInfo = await xianWalletUtilInstance.requestWalletInfo();
-            const address = walletInfo.address;
-            const rawPolls = await xianWalletUtilInstance.fetchAllPolls(CONTRACT);
-            const targetPoll = rawPolls.find(p => p.id.toString() === pollId.toString());
-
-            if (targetPoll) {
-                const userVote = await xianWalletUtilInstance.getUserVote(CONTRACT, targetPoll.id, address);
-
-                setPoll(prev => ({
-                    ...prev,
-                    userVote: userVote || 0,
-                    options: prev.options.map(opt => {
-                        const updatedOpt = targetPoll.options.find(t =>
-                            (t.id || t.option_id) === opt.id ||
-                            (typeof t === 'object' && t.text === opt.text)
-                        );
-                        return {
-                            ...opt,
-                            votes: updatedOpt?.votes ?? opt.votes,
-                            voting_power: updatedOpt?.voting_power ?? opt.voting_power
-                        };
-                    }),
-                    totalVotes: targetPoll.total_votes ?? targetPoll.totalVotes ?? 0,
-                    totalVotingPower: targetPoll.total_voting_power ?? targetPoll.totalVotingPower ?? 0
-                }));
-            }
-        } catch (error) {
-            console.error('Vote error:', error);
-            handlePollError(error);
+            // Refetch data to get updated on-chain state
+            await refetch();
+        } catch (err) {
+            console.error('Vote error:', err);
+            handlePollError(err);
         } finally {
             setVoting(false);
         }
@@ -162,28 +67,22 @@ const EmbedSinglePoll = ({ pollId }) => {
         if (!endDate) return null;
         const now = new Date();
         const diff = endDate.getTime() - now.getTime();
-
         if (diff <= 0) return 'Ended';
-
-        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-
+        const days = Math.floor(diff / 86400000);
+        const hours = Math.floor((diff % 86400000) / 3600000);
+        const mins = Math.floor((diff % 3600000) / 60000);
         if (days > 0) return `${days}d ${hours}h`;
-        if (hours > 0) return `${hours}h ${minutes}m`;
-        return `${minutes}m`;
+        if (hours > 0) return `${hours}h ${mins}m`;
+        return `${mins}m`;
     };
 
     const formatTokenName = (tokenContract) => {
         if (!tokenContract) return 'Unknown Token';
-
-        const cleanName = tokenContract
+        return tokenContract
             .replace(/^con_/, '')
             .replace(/^token/, '')
             .replace(/_/g, ' ')
             .replace(/\b\w/g, l => l.toUpperCase());
-
-        return cleanName || 'Unknown Token';
     };
 
     if (loading) {
@@ -199,7 +98,7 @@ const EmbedSinglePoll = ({ pollId }) => {
         return (
             <div className="embed-single-error">
                 <h3>Poll Not Found</h3>
-                <p>{error || 'The poll you are looking for does not exist.'}</p>
+                <p>{error?.message || 'The poll you are looking for does not exist.'}</p>
             </div>
         );
     }
@@ -210,15 +109,15 @@ const EmbedSinglePoll = ({ pollId }) => {
                 <h2>{poll.title}</h2>
                 <div className="embed-single-meta">
                     <span>By {poll.creator}</span>
-                    <span>{formatTokenName(poll.token_contract)}</span>
-                    {pollExpired(poll) ? (
-                        <span className="embed-single-status ended">Ended</span>
-                    ) : (
-                        <span className="embed-single-status active">
-                            {getTimeRemaining(poll.endDate)}
-                        </span>
-                    )}
+                    <span>{formatTokenName(poll.tokenContract)}</span>
                 </div>
+                {pollExpired(poll) ? (
+                    <span className="embed-single-status ended">Ended</span>
+                ) : (
+                    <span className="embed-single-status active">
+                        {getTimeRemaining(poll.endDate)}
+                    </span>
+                )}
             </div>
 
             {hasVoted(poll) && (

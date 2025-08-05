@@ -182,6 +182,7 @@ const Section = () => {
     };
 
     const formatTokenName = (tokenContract) => {
+        console.log(tokenContract)
         if (!tokenContract) return 'Unknown Token';
 
         // Remove common prefixes and format nicely
@@ -221,7 +222,7 @@ const Section = () => {
                 <div className="hero-section fade-in">
                     <div className="hero-content">
                         <h1 className="hero-title">
-                            <span className="gradient-text">XiPOLL</span>
+                            <span className="logo-text">XiPOLL</span>
                         </h1>
                         <p className="hero-subtitle">
                             Decentralized <a className='gradient-text'>Polling</a> on the Xian blockchain

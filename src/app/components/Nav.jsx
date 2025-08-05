@@ -28,6 +28,15 @@ const Nav = () => {
                     </div>
 
                     <div className="nav-menu">
+                        <div className="nav-start">
+                            <a href="/my-votes" className="nav-link">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M9 12l2 2 4-4"></path>
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                </svg>
+                                My Votes
+                            </a>
+                        </div>
                         <div className="nav-end">
 
                             <div className="wallet-status">

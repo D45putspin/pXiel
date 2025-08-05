@@ -1796,7 +1796,7 @@ body {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
-  color: var(--text-secondary);
+  color: var(--text-secondary) !important;
   text-decoration: none;
   padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-md);
@@ -1805,7 +1805,7 @@ body {
 }
 
 .nav-link:hover {
-  color: var(--text-primary);
+  color: var(--text-primary) !important;
   background: var(--bg-secondary);
 }
 
@@ -2137,4 +2137,62 @@ a:hover {
   justify-content: center;
   align-items: center;
   min-height: 500px;
+}
+
+/* My Votes Page Styles */
+.my-votes-header {
+  text-align: center;
+  margin-bottom: var(--space-xl);
+}
+
+.page-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: var(--space-sm);
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.page-subtitle {
+  font-size: 1.125rem;
+  color: var(--text-secondary);
+  margin-bottom: 0;
+}
+
+.your-vote-section {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: var(--radius-md);
+}
+
+.vote-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.voted-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-weight: 600;
+  color: var(--accent-success);
+}
+
+.voted-option svg {
+  color: var(--accent-success);
+}
+
+/* Navigation styles for nav-start */
+.nav-start {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
 }
