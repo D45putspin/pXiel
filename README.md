@@ -1,163 +1,91 @@
-# Decentralized Voting System
+# pXiel — Collaborative Pixel Canvas
 
-A modern, blockchain-based voting application built with Next.js and the Xian blockchain.
+🎨 Express yourself on the blockchain, one pixel at a time.
+
+pXiel is a decentralized collaborative pixel art canvas built on the Xian blockchain. Paint pixels, create art, and leave your mark forever on an immutable, shared canvas.
 
 ## 🚀 Features
 
-- **Create Polls**: Users can create new polls with multiple voting options
-- **Vote Securely**: Cast votes using blockchain technology for transparency
-- **Real-time Results**: See live voting results with percentage breakdowns
-- **User-friendly Interface**: Clean, modern UI with Bulma CSS framework
-- **Wallet Integration**: Seamless integration with Xian wallet extension
+- **Decentralized Canvas**: Every pixel is recorded on-chain
+- **Real-time Collaboration**: See pixels appear as transactions land
+- **Smooth Controls**: Zoom, pan, and paint with a simple UI
+- **Wallet Integration**: Connect your Xian wallet to participate
+- **1 XIAN per pixel**: Frontend passes value; contract enforces the fee
 
-## 🛠️ Technology Stack
+## 🛠️ Tech Stack
 
 - **Frontend**: Next.js 14, React 18
-- **Styling**: Bulma CSS Framework
-- **State Management**: Zustand
-- **Blockchain**: Xian Network
-- **Wallet**: Xian Wallet Extension
+- **Styling**: Bulma
+- **State**: Zustand
+- **Indexing**: Apollo Client (GraphQL)
+- **Blockchain**: Xian Network + Wallet Extension
 
 ## 📋 Prerequisites
 
 - Node.js 18+
-- Xian Wallet Extension installed in your browser
-- Access to Xian testnet
+- Xian Wallet Extension installed
+- Access to Xian testnet funds
 
-## 🚀 Getting Started
+## ⚙️ Environment Variables
 
-1. **Install Dependencies**
+Create `.env.local` in the project root (values shown are sensible defaults):
 
-   ```bash
-   npm install
-   ```
+```bash
+# RPC and WebSocket
+NEXT_PUBLIC_XIAN_RPC=https://testnet.xian.org
+NEXT_PUBLIC_XIAN_WS_URL=wss://devnet.xian.org/websocket
 
-2. **Run Development Server**
+# Canvas contract + settings
+NEXT_PUBLIC_CANVAS_CONTRACT=con_pixel_canvas4
+NEXT_PUBLIC_CANVAS_SIZE=500         # default is 32 if unset
+NEXT_PUBLIC_PIXEL_PRICE_WEI=1000000000000000000  # 1 XIAN in wei
+```
 
-   ```bash
-   npm run dev
-   ```
+Notes:
 
-3. **Open Browser**
-   Navigate to `http://localhost:3000`
+- The app has built-in defaults; env vars let you point to custom endpoints/contracts.
+- The WebSocket monitor subscribes to `tm.event='Tx'` and filters by `contract` to stream paint events.
 
-4. **Connect Wallet**
-   - Install the Xian Wallet Extension
-   - Connect your wallet to the dapp
-   - Ensure you have some test tokens
+## ▶️ Getting Started
 
-## 🎯 How to Use
+1. Install dependencies
 
-### Creating a Poll
+```bash
+npm install
+```
 
-1. Click "Create New Poll" button
-2. Enter a poll title
-3. Add voting options (minimum 2)
-4. Click "Create Poll" to submit to blockchain
+2. Start the dev server (port 4545)
 
-### Voting
+```bash
+npm run dev
+```
 
-1. Browse available polls
-2. Click "Vote" on your preferred option
-3. Confirm transaction in your wallet
-4. See real-time results update
+Open `http://localhost:4545`.
 
-### Viewing Results
+## 🧭 Usage
 
-- Results are displayed in real-time
-- Progress bars show vote percentages
-- Total vote counts are visible
-- Your voted option is highlighted
+1. Connect your Xian wallet
+2. Choose a color
+3. Click a pixel to paint (wallet will prompt; 1 XIAN per pixel)
+4. Navigate the board:
+   - `Ctrl + Scroll` to zoom
+   - `Ctrl + Drag` to pan
 
-## 🔧 Smart Contract Integration
+Painted pixels appear in near real-time as transactions are observed via WebSocket.
 
-The dapp integrates with Xian smart contracts for:
+## 🔗 Smart Contract Expectations
 
-- `create_poll`: Creates new polls on the blockchain
-- `vote`: Submits votes securely
-- `get_polls`: Retrieves poll data
-- `get_votes`: Gets voting results
+- Contract name from `NEXT_PUBLIC_CANVAS_CONTRACT` (default: `con_pixel_canvas4`)
+- Exposes a `paint` method accepting coordinates and color
+- Enforces a 1 XIAN fee per pixel (frontend also sends `value`)
 
-## 🎨 UI Components
+## 🧱 Scripts
 
-- **Poll Cards**: Display poll information and voting options
-- **Progress Bars**: Visual representation of vote percentages
-- **Vote Buttons**: Interactive voting interface
-- **Create Form**: Modal for creating new polls
-
-## 🔒 Security Features
-
-- **Blockchain Verification**: All votes are recorded on-chain
-- **One Vote Per User**: Prevents duplicate voting
-- **Transparent Results**: All data is publicly verifiable
-- **Wallet Authentication**: Secure user identification
-
-## 🚀 Future Enhancements
-
-- [ ] Token-weighted voting
-- [ ] Time-locked polls
-- [ ] Delegated voting
-- [ ] Mobile app
-- [ ] Advanced analytics
-- [ ] Multi-language support
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+- `npm run dev` — Next.js dev server on port 4545
+- `npm run build` — Production build
+- `npm run start` — Start production server on port 4545
+- `npm run lint` — Lint the project
 
 ## 📄 License
 
-This project is licensed under the MIT License.
-
-## 🆘 Support
-
-For support, please open an issue in the GitHub repository or contact the development team.
-
-# pXiel - Collaborative Pixel Canvas
-
-🎨 **Express yourself on the blockchain, one pixel at a time.**
-
-pXiel is a decentralized collaborative pixel art canvas built on the Xian blockchain. Paint pixels, create art, and leave your mark forever on the immutable canvas.
-
-## 🚀 Features
-
-- **Decentralized Canvas**: Every pixel is stored on-chain, making your art permanent
-- **Real-time Collaboration**: See other artists' pixels appear in real-time
-- **Smooth Controls**: Zoom, pan, and navigate the canvas with ease
-- **Wallet Integration**: Connect your Xian wallet to start painting
-- **Low Cost**: Paint pixels for just 1 XIAN each
-
-## 🎮 How to Use
-
-1. **Connect Wallet**: Click the wallet button to connect your Xian wallet
-2. **Choose Color**: Select your desired color from the color picker
-3. **Paint**: Click any pixel on the canvas to paint it
-4. **Navigate**:
-   - `Ctrl + Scroll` to zoom in/out
-   - `Ctrl + Drag` to pan around
-   - `Click` to paint a pixel
-
-## 🛠️ Technical Details
-
-- Built with Next.js 14 and React
-- Xian blockchain integration for decentralized storage
-- GraphQL for efficient data queries
-- Real-time canvas updates
-
-## Environment
-
-Add these env vars (e.g. `.env.local` for Next.js):
-
-```bash
-NEXT_PUBLIC_XIAN_RPC=https://testnet.xian.org
-NEXT_PUBLIC_XIAN_WS_URL=wss://devnet.xian.org/websocket
-NEXT_PUBLIC_XIAN_BDS=https://devnet.xian.org/graphql
-NEXT_PUBLIC_CANVAS_CONTRACT=con_pixel_canvas4
-NEXT_PUBLIC_CANVAS_SIZE=500
-NEXT_PUBLIC_PIXEL_PRICE_WEI=1000000000000000000
-```
-
-# pXiel
+MIT
