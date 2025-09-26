@@ -1,16 +1,18 @@
 'use client';
 
 import React from 'react';
-import MyVotes from "../components/MyVotes.jsx";
+import Main from "../components/Main";
 import { ApolloProvider } from '@apollo/client';
 import { createApolloClient } from '../lib/apolloClient';
 
-export default function MyVotesPage() {
+export default function DappPage() {
   const client = createApolloClient();
 
   return (
     <ApolloProvider client={client}>
-      <MyVotes />
+      <Main />
     </ApolloProvider>
   )
-} 
+}
+
+

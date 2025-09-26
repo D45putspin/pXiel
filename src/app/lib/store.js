@@ -1,9 +1,26 @@
 // store.js
+'use client'
 import { create } from 'zustand';
 
 const useStore = create((set, get) => ({
-    walletAddressElementValue: "Connect Wallet",
-    setWalletAddressElementValue: (value) => set({ walletAddressElementValue: value }),
+    // Wallet state with boolean connection status
+    walletAddress: null,
+    isConnected: false,
+    setWalletAddress: (addr) => set({ 
+        walletAddress: addr, 
+        isConnected: !!addr && addr.length > 20 
+    }),
+    
+    // Legacy compatibility (deprecated - use walletAddress and isConnected)
+    walletAddressElementValue: "Not connected",
+    setWalletAddressElementValue: (value) => {
+        const addr = value === "Not connected" ? null : value;
+        set({ 
+            walletAddress: addr, 
+            isConnected: !!addr && addr.length > 20,
+            walletAddressElementValue: value 
+        });
+    },
     
     // Voting system state
     polls: [],

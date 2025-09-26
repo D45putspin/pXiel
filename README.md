@@ -115,4 +115,47 @@ This project is licensed under the MIT License.
 ## 🆘 Support
 
 For support, please open an issue in the GitHub repository or contact the development team.
-# xipoll
+
+# pXiel - Collaborative Pixel Canvas
+
+🎨 **Express yourself on the blockchain, one pixel at a time.**
+
+pXiel is a decentralized collaborative pixel art canvas built on the Xian blockchain. Paint pixels, create art, and leave your mark forever on the immutable canvas.
+
+## 🚀 Features
+
+- **Decentralized Canvas**: Every pixel is stored on-chain, making your art permanent
+- **Real-time Collaboration**: See other artists' pixels appear in real-time
+- **Smooth Controls**: Zoom, pan, and navigate the canvas with ease
+- **Wallet Integration**: Connect your Xian wallet to start painting
+- **Low Cost**: Paint pixels for just 1 XIAN each
+
+## 🎮 How to Use
+
+1. **Connect Wallet**: Click the wallet button to connect your Xian wallet
+2. **Choose Color**: Select your desired color from the color picker
+3. **Paint**: Click any pixel on the canvas to paint it
+4. **Navigate**:
+   - `Ctrl + Scroll` to zoom in/out
+   - `Ctrl + Drag` to pan around
+   - `Click` to paint a pixel
+
+## 🛠️ Technical Details
+
+- Built with Next.js 14 and React
+- Xian blockchain integration for decentralized storage
+- GraphQL for efficient data queries
+- Real-time canvas updates
+
+## Environment
+
+Add these env vars (e.g. `.env.local` for Next.js):
+
+```bash
+NEXT_PUBLIC_XIAN_RPC=https://testnet.xian.org
+NEXT_PUBLIC_XIAN_WS_URL=wss://devnet.xian.org/websocket
+NEXT_PUBLIC_XIAN_BDS=https://devnet.xian.org/graphql
+NEXT_PUBLIC_CANVAS_CONTRACT=con_pixel_canvas4
+NEXT_PUBLIC_CANVAS_SIZE=500
+NEXT_PUBLIC_PIXEL_PRICE_WEI=1000000000000000000
+```

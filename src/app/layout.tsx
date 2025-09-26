@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Press_Start_2P } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({ 
@@ -7,9 +7,15 @@ const inter = Inter({
   variable: "--font-inter"
 });
 
+const pixel = Press_Start_2P({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-pixel"
+});
+
 export const metadata: Metadata = {
-  title: "XiPOLL - Decentralized Voting",
-  description: "Decentralized voting on the Xian blockchain with advanced governance features",
+  title: "pXiel - Collaborative Pixel Canvas",
+  description: "Decentralized collaborative pixel art canvas built on the Xian blockchain",
 };
 
 export default function RootLayout({
@@ -19,7 +25,20 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={inter.className}>{children}</body>
+      <body className={`${inter.className} ${pixel.className}`}>
+        <div id="__next">
+          {children}
+        </div>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              document.addEventListener('keydown', function(e){
+                if(e.key === 'Enter') { window.location.href = '/dapp'; }
+              });
+            `,
+          }}
+        />
+      </body>
     </html>
   );
 }

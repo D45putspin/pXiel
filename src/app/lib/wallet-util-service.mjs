@@ -1,3 +1,4 @@
+
 import XianWalletUtils from './js/xian-dapp-utils.js';
 
 export default class WalletUtilService {
