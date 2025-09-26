@@ -6,9 +6,19 @@ import WalletUtilService from '@/app/lib/wallet-util-service.mjs';
 import { CONTRACT_NAME, DEFAULT_SIZE, PIXEL_PRICE_WEI } from '@/app/lib/addresses';
 import { usePixelLoadingAnimation } from './PixelLoadingAnimation';
 import { startXianPaintMonitor } from '@/app/lib/js/xian-ws-monitor';
+import ApproveModal from './ApproveModal.jsx';
+import { gql, useApolloClient } from '@apollo/client';
 
 const CANVAS_SIZE = 500;
 const DEFAULT_PIXEL_SIZE = 10;
+const useValuePayment = (process.env.NEXT_PUBLIC_USE_VALUE_PAYMENT || '').toLowerCase() === 'true';
+
+// Apollo GraphQL queries
+const STATE_BY_KEY = gql`
+    query State($key: String!) {
+        stateByKey(key: $key) { value }
+    }
+`;
 
 export default function Section() {
     const canvasRef = useRef(null);
@@ -28,12 +38,17 @@ export default function Section() {
     const [ctrlPressed, setCtrlPressed] = useState(false);
     const [mouseDownPos, setMouseDownPos] = useState(null);
     const [hasDragged, setHasDragged] = useState(false);
+    const [allowanceXian, setAllowanceXian] = useState(0);
+    const [balanceXian, setBalanceXian] = useState(0);
+    const [showApproveModal, setShowApproveModal] = useState(false);
+    const [pendingPaint, setPendingPaint] = useState(null);
 
     const walletAddress = useStore(state => state.walletAddress);
     const isConnected = useStore(state => state.isConnected);
     const setWalletAddress = useStore(state => state.setWalletAddress);
 
     const pixelSize = DEFAULT_PIXEL_SIZE * zoom;
+    const apolloClient = useApolloClient();
 
     // Draw the canvas
     const draw = useCallback(() => {
@@ -166,7 +181,7 @@ export default function Section() {
             ctx.font = '12px "Press Start 2P", monospace';
             ctx.fillText(`(${hoveredPixel.x}, ${hoveredPixel.y})`, screenX + pixelSize + 5, screenY + pixelSize / 2);
         }
-    }, [pixels, offset, zoom, hoveredPixel, loading, loadingProgress, loadingPixels, drawLoadingAnimation]);
+    }, [pixels, offset, zoom, pixelSize, hoveredPixel, loading, loadingProgress, loadingPixels, drawLoadingAnimation]);
 
     // Canvas resize handler
     useEffect(() => {
@@ -183,6 +198,70 @@ export default function Section() {
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, [draw]);
+
+    // GraphQL queries (defined before any effects that reference it)
+    // Apollo-based helper for stateByKey
+    const queryStateByKeyApollo = useCallback(async (key) => {
+        try {
+            const { data } = await apolloClient.query({
+                query: STATE_BY_KEY,
+                variables: { key },
+                fetchPolicy: 'network-only',
+            });
+            return data?.stateByKey?.value;
+        } catch (e) {
+            // Fallback to raw fetch without referencing queryGraphQL to avoid TDZ
+            try {
+                const BDS_URL = process.env.NEXT_PUBLIC_XIAN_BDS || 'https://devnet.xian.org/graphql';
+                const res = await fetch(BDS_URL, {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({
+                        query: `query State($key: String!) { stateByKey(key: $key) { value } }`,
+                        variables: { key }
+                    }),
+                });
+                const json = await res.json();
+                return json?.data?.stateByKey?.value;
+            } catch (_) {
+                return undefined;
+            }
+        }
+    }, [apolloClient]);
+
+    // Warn if RPC and BDS networks differ (devnet vs testnet)
+    useEffect(() => {
+        const rpc = (process.env.NEXT_PUBLIC_XIAN_RPC || '').toLowerCase();
+        const bds = (process.env.NEXT_PUBLIC_XIAN_BDS || '').toLowerCase();
+        const isDevnet = (u) => u.includes('devnet');
+        const isTestnet = (u) => u.includes('testnet');
+        if ((isDevnet(rpc) && isTestnet(bds)) || (isTestnet(rpc) && isDevnet(bds))) {
+            setTxStatus('Network mismatch: wallet RPC and GraphQL are on different networks');
+            try { console.warn('Xian network mismatch detected', { rpc, bds }); } catch { }
+        }
+    }, []);
+
+    const queryGraphQL = useCallback(async (key) => {
+        const BDS_URL = process.env.NEXT_PUBLIC_XIAN_BDS || 'https://devnet.xian.org/graphql';
+        const query = `
+            query State($key: String!) {
+                stateByKey(key: $key) {
+                    value
+                }
+            }
+        `;
+
+        const res = await fetch(BDS_URL, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                query,
+                variables: { key }
+            }),
+        });
+        const json = await res.json();
+        return json?.data?.stateByKey?.value;
+    }, []);
 
     // Realtime paints via WebSocket
     useEffect(() => {
@@ -224,7 +303,7 @@ export default function Section() {
         return () => {
             try { if (typeof stop === 'function') stop(); } catch { }
         };
-    }, [CONTRACT_NAME]);
+    }, [queryGraphQL]);
 
     // Set initial canvas position on mount
     useEffect(() => {
@@ -380,6 +459,31 @@ export default function Section() {
         if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && !hasDragged) {
             const coords = getPixelCoords(e);
             if (coords) {
+                const connected = await ensureConnected();
+                if (!connected) {
+                    setTxStatus('Connect wallet first');
+                    return;
+                }
+                // If using native value flow, skip allowance gating
+                if (!useValuePayment) {
+                    let owner = walletAddress;
+                    if (!owner) {
+                        try {
+                            const w = WalletUtilService.getInstance().XianWalletUtils;
+                            const info = await w.requestWalletInfo();
+                            owner = info?.address || info?.wallet?.address || null;
+                        } catch { }
+                    }
+                    if (owner) {
+                        const { allowance } = await fetchAllowanceAndBalance(owner);
+                        if ((Number(allowance) || 0) < 1) {
+                            setPendingPaint({ x: coords.x, y: coords.y });
+                            setShowApproveModal(true);
+                            setTxStatus('Allowance needed. Approve XIAN to continue.');
+                            return;
+                        }
+                    }
+                }
                 await handlePaint(coords.x, coords.y);
             }
         }
@@ -466,28 +570,30 @@ export default function Section() {
         setOffset({ x: 50, y: 50 });
     };
 
-    // GraphQL queries
-    const queryGraphQL = useCallback(async (key) => {
-        const BDS_URL = process.env.NEXT_PUBLIC_XIAN_BDS || 'https://devnet.xian.org/graphql';
-        const query = `
-            query State($key: String!) {
-                stateByKey(key: $key) {
-                    value
-                }
-            }
-        `;
 
-        const res = await fetch(BDS_URL, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-                query,
-                variables: { key }
-            }),
-        });
-        const json = await res.json();
-        return json?.data?.stateByKey?.value;
-    }, []);
+
+    const fetchAllowanceAndBalance = useCallback(async (ownerAddr) => {
+        try {
+            if (!ownerAddr) return;
+            const owner = ownerAddr;
+            const spender = CONTRACT_NAME;
+            // For XSC0001/XSC0002/currency standard, allowance lives in balances[owner, spender]
+            const allowanceKey = `currency.balances:${owner}:${spender}`;
+            const balanceKey = `currency.balances:${owner}`;
+            const [allowanceVal, balanceVal] = await Promise.all([
+                queryStateByKeyApollo(allowanceKey),
+                queryStateByKeyApollo(balanceKey)
+            ]);
+            const parsedAllowance = Number(allowanceVal || 0);
+            const parsedBalance = Number(balanceVal || 0);
+            if (!Number.isNaN(parsedAllowance)) setAllowanceXian(parsedAllowance);
+            if (!Number.isNaN(parsedBalance)) setBalanceXian(parsedBalance);
+            return { allowance: Number.isNaN(parsedAllowance) ? 0 : parsedAllowance, balance: Number.isNaN(parsedBalance) ? 0 : parsedBalance };
+        } catch (e) {
+            // noop
+            return { allowance: 0, balance: 0 };
+        }
+    }, [queryStateByKeyApollo]);
 
     const loadCanvasViaGraphQL = useCallback(async () => {
         setLoading(true);
@@ -565,7 +671,7 @@ export default function Section() {
             setLoadingProgress(0);
             setLoadingPixels([]);
         }
-    }, []);
+    }, [setLoadingPixels]);
 
     // Load canvas data on initial mount (after loadCanvasViaGraphQL is defined)
     useEffect(() => {
@@ -640,6 +746,12 @@ export default function Section() {
         }
     }, [isConnected, setWalletAddress]);
 
+    useEffect(() => {
+        if (!useValuePayment && walletAddress) {
+            fetchAllowanceAndBalance(walletAddress);
+        }
+    }, [walletAddress, fetchAllowanceAndBalance]);
+
     const handlePaint = useCallback(async (x, y) => {
         if (!(await ensureConnected())) {
             setTxStatus('Connect wallet first');
@@ -650,25 +762,14 @@ export default function Section() {
         setTxStatus(`Painting pixel at (${x}, ${y})...`);
 
         try {
-            // Step 1: Approve
-            setTxStatus('Approving 1 XIAN...');
-            const approveResult = await w.sendTransaction('currency', 'approve', {
-                to: CONTRACT_NAME,
-                amount: 1.0
-            });
-
-            // Check if approval actually failed (errors array present) vs just pending/processing
-            if (approveResult && 'errors' in approveResult && approveResult.errors && approveResult.errors.length > 0) {
-                throw new Error(`Approval failed: ${approveResult.errors.join(', ')}`);
-            }
-
-            // Step 2: Paint
+            // Paint using allowance or native value (configurable)
             setTxStatus('Painting pixel...');
-            const paintResult = await w.sendTransaction(CONTRACT_NAME, 'paint', {
-                x: x,
-                y: y,
-                color: selected
-            });
+            const paintResult = await w.sendTransaction(
+                CONTRACT_NAME,
+                'paint',
+                { x, y, color: selected },
+                useValuePayment ? String(PIXEL_PRICE_WEI) : undefined
+            );
 
             // Check if paint actually failed (errors array present) vs just pending/processing
             if (paintResult && 'errors' in paintResult && paintResult.errors && paintResult.errors.length > 0) {
@@ -681,11 +782,16 @@ export default function Section() {
             // Poll for the transaction result with exponential backoff
             await waitForTransactionConfirmation(x, y, selected);
 
+            // Refresh on-chain allowance if using allowance flow
+            if (!useValuePayment && walletAddress) {
+                await fetchAllowanceAndBalance(walletAddress);
+            }
+
         } catch (e) {
             console.error('Transaction error:', e);
             setTxStatus(e?.message || 'Transaction error.');
         }
-    }, [ensureConnected, selected, waitForTransactionConfirmation]);
+    }, [ensureConnected, selected, waitForTransactionConfirmation, fetchAllowanceAndBalance, walletAddress]);
 
     return (
         <section className="section fullscreen">
@@ -748,6 +854,18 @@ export default function Section() {
                         </button>
                     </div>
 
+                    {!useValuePayment && (
+                        <div className="control-group">
+                            <label className="label">Approved allowance</label>
+                            <span className="pill">{Number(allowanceXian) || 0} XIAN</span>
+                            <button
+                                className="btn"
+                                style={{ marginLeft: 8 }}
+                                onClick={async () => { if (walletAddress) await fetchAllowanceAndBalance(walletAddress); }}
+                            >↻</button>
+                        </div>
+                    )}
+
                     {hoveredPixel && (
                         <div className="control-group">
                             <span className="pill">Pixel: ({hoveredPixel.x}, {hoveredPixel.y})</span>
@@ -771,6 +889,37 @@ export default function Section() {
                     )}
                 </p>
             </div>
+
+            <ApproveModal
+                isOpen={showApproveModal}
+                onClose={() => { setShowApproveModal(false); setPendingPaint(null); }}
+                onApprove={async (amt) => {
+                    try {
+                        const w = WalletUtilService.getInstance().XianWalletUtils;
+                        setTxStatus(`Approving ${amt} XIAN...`);
+                        const approveResult = await w.sendTransaction('currency', 'approve', {
+                            to: CONTRACT_NAME,
+                            amount: Number(amt)
+                        });
+                        if (approveResult && 'errors' in approveResult && approveResult.errors && approveResult.errors.length > 0) {
+                            throw new Error(`Approval failed: ${approveResult.errors.join(', ')}`);
+                        }
+                        await fetchAllowanceAndBalance(walletAddress);
+                        setShowApproveModal(false);
+                        setTxStatus('Allowance approved.');
+                        if (pendingPaint) {
+                            const { x, y } = pendingPaint;
+                            setPendingPaint(null);
+                            await handlePaint(x, y);
+                        }
+                    } catch (e) {
+                        console.error('Approval error:', e);
+                        setTxStatus(e?.message || 'Approval error.');
+                    }
+                }}
+                currentAllowance={Number(allowanceXian) || 0}
+                pricePerPaint={1}
+            />
         </section>
     );
 }

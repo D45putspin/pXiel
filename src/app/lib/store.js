@@ -13,14 +13,7 @@ const useStore = create((set, get) => ({
     
     // Legacy compatibility (deprecated - use walletAddress and isConnected)
     walletAddressElementValue: "Not connected",
-    setWalletAddressElementValue: (value) => {
-        const addr = value === "Not connected" ? null : value;
-        set({ 
-            walletAddress: addr, 
-            isConnected: !!addr && addr.length > 20,
-            walletAddressElementValue: value 
-        });
-    },
+    setWalletAddressElementValue: (value) => set({ walletAddressElementValue: value }),
     
     // Voting system state
     polls: [],
